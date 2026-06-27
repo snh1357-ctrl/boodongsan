@@ -14,6 +14,24 @@ interface Suggestion {
   aptName: string // remaining tokens after removing matched location word
 }
 
+const CHOSUNG = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ']
+
+function toChosung(str: string): string {
+  return [...str].map(c => {
+    const code = c.charCodeAt(0) - 0xAC00
+    if (code < 0 || code > 11171) return c
+    return CHOSUNG[Math.floor(code / (21 * 28))]
+  }).join('')
+}
+
+function matchesTok(target: string, tok: string): boolean {
+  if (target.includes(tok)) return true
+  // 초성 검색: tok이 전부 초성 자모일 때
+  const isChosung = [...tok].every(c => CHOSUNG.includes(c))
+  if (isChosung) return toChosung(target).includes(tok)
+  return false
+}
+
 function buildSuggestions(query: string, bjdong: BjdongEntry[]): Suggestion[] {
   const q = query.trim()
   if (!q) return []
@@ -26,9 +44,7 @@ function buildSuggestions(query: string, bjdong: BjdongEntry[]): Suggestion[] {
   for (let i = 0; i < tokens.length; i++) {
     const tok = tokens[i]
     if (tok.length < 1) continue
-    const matches = bjdong.filter(e =>
-      e.emdNm.includes(tok) || e.fullNm.includes(tok)
-    )
+    const matches = bjdong.filter(e => matchesTok(e.emdNm, tok) || matchesTok(e.fullNm, tok))
     for (const entry of matches) {
       if (seen.has(entry.fullNm)) continue
       seen.add(entry.fullNm)
@@ -40,7 +56,7 @@ function buildSuggestions(query: string, bjdong: BjdongEntry[]): Suggestion[] {
 
   // fallback: match full query against fullNm
   if (results.length === 0) {
-    const matches = bjdong.filter(e => e.fullNm.includes(q) || e.emdNm.includes(q))
+    const matches = bjdong.filter(e => matchesTok(e.fullNm, q) || matchesTok(e.emdNm, q))
     for (const entry of matches.slice(0, 8)) {
       results.push({ entry, aptName: '' })
     }
