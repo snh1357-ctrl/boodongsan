@@ -1,5 +1,6 @@
 // src/components/SearchBar.tsx
-import { useState, useEffect } from 'react'
+// Smart single-input search: "평촌 엘프라우드" → splits tokens, matches 동, rest = aptName
+import { useState, useEffect, useRef } from 'react'
 import type { BjdongEntry } from '../types'
 
 interface Props {
@@ -8,69 +9,136 @@ interface Props {
   loading: boolean
 }
 
+interface Suggestion {
+  entry: BjdongEntry
+  aptName: string // remaining tokens after removing matched location word
+}
+
+function buildSuggestions(query: string, bjdong: BjdongEntry[]): Suggestion[] {
+  const q = query.trim()
+  if (!q) return []
+
+  const tokens = q.split(/\s+/)
+  const seen = new Set<string>()
+  const results: Suggestion[] = []
+
+  // Try each token as a potential location match
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i]
+    if (tok.length < 1) continue
+    const matches = bjdong.filter(e =>
+      e.emdNm.includes(tok) || e.fullNm.includes(tok)
+    )
+    for (const entry of matches) {
+      if (seen.has(entry.fullNm)) continue
+      seen.add(entry.fullNm)
+      const aptName = tokens.filter((_, j) => j !== i).join(' ')
+      results.push({ entry, aptName })
+      if (results.length >= 8) return results
+    }
+  }
+
+  // fallback: match full query against fullNm
+  if (results.length === 0) {
+    const matches = bjdong.filter(e => e.fullNm.includes(q) || e.emdNm.includes(q))
+    for (const entry of matches.slice(0, 8)) {
+      results.push({ entry, aptName: '' })
+    }
+  }
+
+  return results
+}
+
 export function SearchBar({ bjdong, onSearch, loading }: Props) {
   const [query, setQuery] = useState('')
-  const [aptName, setAptName] = useState('')
-  const [suggestions, setSuggestions] = useState<BjdongEntry[]>([])
-  const [selected, setSelected] = useState<BjdongEntry | null>(null)
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([])
+  const [selected, setSelected] = useState<{ entry: BjdongEntry; aptName: string } | null>(null)
   const [activeIdx, setActiveIdx] = useState(-1)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (query.length < 1) { setSuggestions([]); setActiveIdx(-1); return }
-    const q = query.trim().toLowerCase()
-    setSuggestions(bjdong.filter(e => e.fullNm.includes(q) || e.emdNm.includes(q)).slice(0, 8))
+    if (selected) { setSuggestions([]); return }
+    setSuggestions(buildSuggestions(query, bjdong))
     setActiveIdx(-1)
-  }, [query, bjdong])
+  }, [query, bjdong, selected])
 
-  const handleSelect = (entry: BjdongEntry) => {
-    setSelected(entry)
-    setQuery(entry.fullNm)
+  const handleSelect = (s: Suggestion) => {
+    setSelected(s)
+    setQuery(s.aptName || '')
     setSuggestions([])
     setActiveIdx(-1)
+    setTimeout(() => inputRef.current?.focus(), 0)
   }
 
   const handleSubmit = () => {
-    if (!selected || !aptName.trim()) return
-    onSearch(selected.code, aptName.trim())
+    if (!selected) return
+    const aptName = query.trim()
+    if (!aptName) return
+    onSearch(selected.entry.code, aptName)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') setActiveIdx(i => Math.min(i + 1, suggestions.length - 1))
-    else if (e.key === 'ArrowUp') setActiveIdx(i => Math.max(i - 1, -1))
-    else if (e.key === 'Enter' && activeIdx >= 0) handleSelect(suggestions[activeIdx])
-    else if (e.key === 'Enter') handleSubmit()
+    if (suggestions.length > 0) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx(i => Math.min(i + 1, suggestions.length - 1)) }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIdx(i => Math.max(i - 1, -1)) }
+      else if (e.key === 'Enter' && activeIdx >= 0) { e.preventDefault(); handleSelect(suggestions[activeIdx]) }
+      else if (e.key === 'Enter') handleSubmit()
+    } else {
+      if (e.key === 'Enter') handleSubmit()
+    }
   }
+
+  const clearSelected = () => {
+    setSelected(null)
+    setQuery('')
+    setSuggestions([])
+    setTimeout(() => inputRef.current?.focus(), 0)
+  }
+
+  const placeholder = selected
+    ? `아파트명 입력 (예: 엘프라우드)`
+    : `동+아파트명 입력 (예: 평촌 엘프라우드)`
 
   return (
     <>
       {/* 데스크톱: Formula Bar */}
       <div className="xl-fbar">
         <div style={{ display: 'flex', alignItems: 'center', flex: 1, position: 'relative' }}>
+          {selected && (
+            <span style={{
+              display: 'flex', alignItems: 'center', gap: 4,
+              background: '#e8f5e9', border: '1px solid #4caf50', borderRadius: 3,
+              padding: '2px 6px', marginLeft: 6, marginRight: 4,
+              fontSize: 12, whiteSpace: 'nowrap', flexShrink: 0
+            }}>
+              {selected.entry.emdNm}
+              <button
+                onClick={clearSelected}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginLeft: 2, lineHeight: 1, color: '#555', fontSize: 13 }}
+                title="지역 변경"
+              >×</button>
+            </span>
+          )}
           <input
+            ref={inputRef}
             className="xl-finput"
-            style={{ width: 240, borderRight: '1px solid #d7d7d7' }}
-            placeholder="동 검색 (예: 대치동)"
+            placeholder={placeholder}
             value={query}
-            onChange={e => { setQuery(e.target.value); setSelected(null) }}
+            onChange={e => { setQuery(e.target.value); if (selected) setSelected(null) }}
             onKeyDown={handleKeyDown}
-          />
-          <input
-            className="xl-finput"
-            placeholder="아파트명 입력 (예: 래미안대치팰리스1차)"
-            value={aptName}
-            onChange={e => setAptName(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+            style={{ flex: 1 }}
           />
           {suggestions.length > 0 && (
-            <div className="autocomplete-list" style={{ position: 'absolute', top: '100%', left: 0, zIndex: 100, width: 280 }}>
+            <div className="autocomplete-list" style={{ position: 'absolute', top: '100%', left: 0, zIndex: 100, width: 320 }}>
               {suggestions.map((s, i) => (
                 <div
-                  key={s.fullNm}
+                  key={s.entry.fullNm}
                   className={`autocomplete-item${i === activeIdx ? ' active' : ''}`}
                   onClick={() => handleSelect(s)}
                 >
-                  <span className="ac-symbol">{s.emdNm}</span>
-                  <span className="ac-name">{s.sidoNm} {s.sigunguNm}</span>
+                  <span className="ac-symbol">{s.entry.emdNm}</span>
+                  <span className="ac-name">{s.entry.sidoNm} {s.entry.sigunguNm}</span>
+                  {s.aptName && <span style={{ marginLeft: 6, color: '#888', fontSize: 11 }}>→ "{s.aptName}"</span>}
                 </div>
               ))}
             </div>
@@ -79,7 +147,7 @@ export function SearchBar({ bjdong, onSearch, loading }: Props) {
         <button
           className="xl-addbtn"
           onClick={handleSubmit}
-          disabled={!selected || !aptName.trim() || loading}
+          disabled={!selected || !query.trim() || loading}
         >
           {loading ? '조회중…' : '조회'}
         </button>
@@ -91,20 +159,36 @@ export function SearchBar({ bjdong, onSearch, loading }: Props) {
           <span className="mob-title">🏢 아파트 실거래가</span>
         </div>
         <div className="mob-row2">
+          {selected && (
+            <span style={{ background: '#e8f5e9', border: '1px solid #4caf50', borderRadius: 3, padding: '2px 5px', fontSize: 11, whiteSpace: 'nowrap' }}>
+              {selected.entry.emdNm}
+              <button onClick={clearSelected} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 0 3px', color: '#555' }}>×</button>
+            </span>
+          )}
           <input
-            placeholder="동 검색"
+            placeholder={selected ? '아파트명' : '동+아파트명 (예: 평촌 엘프라우드)'}
             value={query}
-            onChange={e => { setQuery(e.target.value); setSelected(null) }}
+            onChange={e => { setQuery(e.target.value); if (selected) setSelected(null) }}
+            onKeyDown={handleKeyDown}
           />
-          <input
-            placeholder="아파트명"
-            value={aptName}
-            onChange={e => setAptName(e.target.value)}
-          />
-          <button className="mob-addbtn" onClick={handleSubmit} disabled={!selected || !aptName.trim() || loading}>
+          <button className="mob-addbtn" onClick={handleSubmit} disabled={!selected || !query.trim() || loading}>
             {loading ? '…' : '조회'}
           </button>
         </div>
+        {suggestions.length > 0 && (
+          <div style={{ background: '#fff', border: '1px solid #ccc', borderTop: 'none' }}>
+            {suggestions.map((s, i) => (
+              <div
+                key={s.entry.fullNm}
+                style={{ padding: '6px 10px', cursor: 'pointer', background: i === activeIdx ? '#f0f7f0' : 'transparent', fontSize: 13 }}
+                onClick={() => handleSelect(s)}
+              >
+                <strong>{s.entry.emdNm}</strong> <span style={{ color: '#888', fontSize: 11 }}>{s.entry.sidoNm} {s.entry.sigunguNm}</span>
+                {s.aptName && <span style={{ color: '#4caf50', fontSize: 11 }}> → "{s.aptName}"</span>}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </>
   )
