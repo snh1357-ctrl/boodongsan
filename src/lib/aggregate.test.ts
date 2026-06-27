@@ -72,4 +72,10 @@ describe('aggregateByArea', () => {
   it('빈 배열이면 빈 결과 반환', () => {
     expect(aggregateByArea([])).toEqual([])
   })
+
+  it('등락률은 역대최고가가 0일 때 0 반환', () => {
+    const deals = [makeDeal({ dealAmount: '0', dealYear: '2024', dealMonth: '1', dealDay: '1' })]
+    const units = aggregateByArea(deals)
+    expect(units[0].changeRate).toBe(0)
+  })
 })

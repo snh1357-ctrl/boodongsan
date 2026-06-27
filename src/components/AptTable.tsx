@@ -1,5 +1,5 @@
 // src/components/AptTable.tsx
-import { useState } from 'react'
+import React, { useState } from 'react'
 import type { AptResult, AptUnit } from '../types'
 
 interface Props {
@@ -144,9 +144,8 @@ export function AptTable({ results, onRemove }: Props) {
             const unitRows = isExpanded ? result.units : []
             unitRows.forEach(() => globalRow++)
             return (
-              <>
+              <React.Fragment key={key}>
                 <AptRow
-                  key={key}
                   result={result}
                   rowNum={aptRowNum}
                   expanded={isExpanded}
@@ -160,7 +159,7 @@ export function AptTable({ results, onRemove }: Props) {
                     rowNum={aptRowNum + i + 1}
                   />
                 ))}
-              </>
+              </React.Fragment>
             )
           })}
         </tbody>

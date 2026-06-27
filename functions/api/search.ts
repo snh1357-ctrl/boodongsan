@@ -34,21 +34,44 @@ function currentYYYYMM(): string {
 }
 
 async function fetchMonth(apiKey: string, dongCode: string, ym: string): Promise<MolitItem[]> {
-  const url = new URL('https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev')
-  url.searchParams.set('serviceKey', apiKey)
-  url.searchParams.set('LAWD_CD', dongCode)
-  url.searchParams.set('DEAL_YMD', ym)
-  url.searchParams.set('numOfRows', '1000')
-  url.searchParams.set('pageNo', '1')
-  url.searchParams.set('_type', 'json')
+  const baseParams = new URLSearchParams({
+    serviceKey: apiKey,
+    LAWD_CD: dongCode,
+    DEAL_YMD: ym,
+    numOfRows: '1000',
+    _type: 'json',
+  })
 
+  // Fetch first page to get totalCount
+  const firstUrl = `https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev?${baseParams}&pageNo=1`
   try {
-    const res = await fetch(url.toString())
+    const res = await fetch(firstUrl)
     if (!res.ok) return []
     const data = await res.json() as any
-    const items = data?.response?.body?.items?.item
-    if (!items) return []
-    return Array.isArray(items) ? items : [items]
+    const body = data?.response?.body
+    if (!body) return []
+
+    const items = body.items?.item
+    const firstPage: MolitItem[] = !items ? [] : Array.isArray(items) ? items : [items]
+
+    const totalCount: number = body.totalCount ?? 0
+    const totalPages = Math.ceil(totalCount / 1000)
+
+    if (totalPages <= 1) return firstPage
+
+    // Fetch remaining pages
+    const pagePromises = Array.from({ length: totalPages - 1 }, (_, i) =>
+      fetch(`https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev?${baseParams}&pageNo=${i + 2}`)
+        .then(r => r.ok ? r.json() : null)
+        .then((d: any) => {
+          const it = d?.response?.body?.items?.item
+          if (!it) return [] as MolitItem[]
+          return (Array.isArray(it) ? it : [it]) as MolitItem[]
+        })
+        .catch(() => [] as MolitItem[])
+    )
+    const rest = await Promise.all(pagePromises)
+    return [...firstPage, ...rest.flat()]
   } catch {
     return []
   }

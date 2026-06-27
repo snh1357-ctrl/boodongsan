@@ -1,5 +1,5 @@
 // src/components/SearchBar.tsx
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import type { BjdongEntry } from '../types'
 
 interface Props {
@@ -14,12 +14,12 @@ export function SearchBar({ bjdong, onSearch, loading }: Props) {
   const [suggestions, setSuggestions] = useState<BjdongEntry[]>([])
   const [selected, setSelected] = useState<BjdongEntry | null>(null)
   const [activeIdx, setActiveIdx] = useState(-1)
-  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (query.length < 1) { setSuggestions([]); return }
+    if (query.length < 1) { setSuggestions([]); setActiveIdx(-1); return }
     const q = query.trim().toLowerCase()
     setSuggestions(bjdong.filter(e => e.fullNm.includes(q) || e.emdNm.includes(q)).slice(0, 8))
+    setActiveIdx(-1)
   }, [query, bjdong])
 
   const handleSelect = (entry: BjdongEntry) => {
@@ -47,7 +47,6 @@ export function SearchBar({ bjdong, onSearch, loading }: Props) {
       <div className="xl-fbar">
         <div style={{ display: 'flex', alignItems: 'center', flex: 1, position: 'relative' }}>
           <input
-            ref={inputRef}
             className="xl-finput"
             style={{ width: 240, borderRight: '1px solid #d7d7d7' }}
             placeholder="동 검색 (예: 대치동)"
