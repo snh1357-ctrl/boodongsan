@@ -33,7 +33,7 @@ function scoreApt(apt: AptEntry, tokens: string[]): boolean {
   )
 }
 
-export function SearchBar({ bjdong, onSearch, loading }: Props) {
+export function SearchBar({ bjdong: _bjdong, onSearch, loading }: Props) {
   const [query, setQuery] = useState('')
   const [aptIndex, setAptIndex] = useState<AptEntry[]>([])
   const [aptIndexLoaded, setAptIndexLoaded] = useState(false)
