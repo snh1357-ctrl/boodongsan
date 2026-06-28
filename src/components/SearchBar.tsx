@@ -121,6 +121,12 @@ export function SearchBar({ bjdong: _bjdong, onSearch, loading }: Props) {
     <>
       {/* 데스크톱: Formula Bar */}
       <div className="xl-fbar">
+        <div className="xl-namebox">A1</div>
+        <div className="xl-fxlbl" style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '0 6px', borderRight: '1px solid #ddd', flexShrink: 0 }}>
+          <button style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#666', padding: '0 2px', fontFamily: 'inherit' }} title="취소">✕</button>
+          <button style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#666', padding: '0 2px', fontFamily: 'inherit' }} title="입력">✓</button>
+          <button style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#0078d4', padding: '0 2px', fontStyle: 'italic', fontFamily: 'inherit' }} title="함수 삽입">fx</button>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', flex: 1, position: 'relative' }}>
           <input
             ref={inputRef}

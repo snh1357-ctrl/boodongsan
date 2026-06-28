@@ -1,7 +1,7 @@
 // src/components/ExcelShell.tsx
 import type { ReactNode } from 'react'
 
-const RIBBON_TABS = ['File', 'Home', 'Insert', 'Draw', 'Page Layout', 'Formulas', 'Data', 'Review', 'View', 'Automate', 'Help']
+const RIBBON_TABS = ['파일', '홈', '삽입', '그리기', '페이지 레이아웃', '수식', '데이터', '검토', '보기', '자동화', '도움말']
 
 const SHEET_TABS = [
   { id: 'apt', label: '아파트' },
@@ -34,6 +34,10 @@ export function ExcelShell({ activeTab, onTabChange, children, statusText, resul
               <button className="xl-qat-btn dim" title="다시실행">↪</button>
             </div>
             <span className="xl-title-text">아파트 실거래가.xlsx — 부동산</span>
+            <div className="xl-search">
+              <span className="xl-search-ico">🔍</span>
+              <input className="xl-search-inp" type="text" placeholder="검색 (Alt+Q)" readOnly />
+            </div>
             <div className="xl-title-right">
               <div className="xl-avatar" title="계정">부</div>
               <button className="xl-cr-btn share-btn">공유</button>
@@ -49,7 +53,7 @@ export function ExcelShell({ activeTab, onTabChange, children, statusText, resul
           <div className="xl-rtabs">
             <button className="xl-filebtn">{RIBBON_TABS[0]}</button>
             {RIBBON_TABS.slice(1).map(tab => (
-              <span key={tab} className={`xl-rtab${tab === 'Home' ? ' on' : ''}`}>{tab}</span>
+              <span key={tab} className={`xl-rtab${tab === '홈' ? ' on' : ''}`}>{tab}</span>
             ))}
             <div className="xl-rtabs-right">
               <button className="xl-rtab-ico" title="리본 축소">∧</button>
@@ -70,7 +74,7 @@ export function ExcelShell({ activeTab, onTabChange, children, statusText, resul
                   <button className="rb">🖌 Format</button>
                 </div>
               </div>
-              <div className="rg-lbl">Clipboard</div>
+              <div className="rg-lbl">클립보드</div>
             </div>
 
             <div className="rg rg-deco rg-d2">
@@ -88,7 +92,7 @@ export function ExcelShell({ activeTab, onTabChange, children, statusText, resul
                   <button className="rb sq">▲</button>
                 </div>
               </div>
-              <div className="rg-lbl">Font</div>
+              <div className="rg-lbl">글꼴</div>
             </div>
 
             <div className="rg rg-deco rg-d3">
@@ -106,7 +110,7 @@ export function ExcelShell({ activeTab, onTabChange, children, statusText, resul
                   <button className="rb sq">▦</button>
                 </div>
               </div>
-              <div className="rg-lbl">Alignment</div>
+              <div className="rg-lbl">맞춤</div>
             </div>
 
             <div className="rg rg-deco rg-d4">
@@ -119,7 +123,7 @@ export function ExcelShell({ activeTab, onTabChange, children, statusText, resul
                   <button className="rb sq">.0</button>
                 </div>
               </div>
-              <div className="rg-lbl">Number</div>
+              <div className="rg-lbl">표시 형식</div>
             </div>
 
             <div className="rg rg-deco rg-d5">
@@ -133,16 +137,16 @@ export function ExcelShell({ activeTab, onTabChange, children, statusText, resul
                   <div className="sty-box sty-calc">Calc</div>
                 </div>
               </div>
-              <div className="rg-lbl">Styles</div>
+              <div className="rg-lbl">스타일</div>
             </div>
 
             <div className="rg rg-deco rg-d6">
               <div className="rg-top col" style={{ justifyContent: 'center' }}>
-                <button className="rb">Insert ▾</button>
-                <button className="rb">Delete ▾</button>
-                <button className="rb">Format ▾</button>
+                <button className="rb">삽입 ▾</button>
+                <button className="rb">삭제 ▾</button>
+                <button className="rb">서식 ▾</button>
               </div>
-              <div className="rg-lbl">Cells</div>
+              <div className="rg-lbl">셀</div>
             </div>
 
             <div className="rg">
@@ -152,7 +156,7 @@ export function ExcelShell({ activeTab, onTabChange, children, statusText, resul
                   <span className="rlbl">Refresh All</span>
                 </button>
               </div>
-              <div className="rg-lbl">Data</div>
+              <div className="rg-lbl">데이터</div>
             </div>
           </div>
         </div>
