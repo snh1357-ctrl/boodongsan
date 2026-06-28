@@ -105,10 +105,16 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     allDeals.push(...results.flat())
   }
 
-  const aptDeals = allDeals.filter(d => d.aptNm?.trim() === aptName.trim())
+  // 이름 정규화 후 매칭 (공백, 대소문자 무시)
+  const normalize = (s: string) => s.replace(/\s/g, '').toLowerCase()
+  const normTarget = normalize(aptName)
+  const aptDeals = allDeals.filter(d => normalize(d.aptNm ?? '') === normTarget)
+
+  // 디버그: 실제 API에서 받은 고유 아파트명 (처음 20개)
+  const foundNames = [...new Set(allDeals.map(d => d.aptNm).filter(Boolean))].slice(0, 20)
 
   const response = new Response(
-    JSON.stringify({ aptName, dongCode, deals: aptDeals }),
+    JSON.stringify({ aptName, dongCode, deals: aptDeals, debug: { totalDeals: allDeals.length, foundNames } }),
     {
       headers: {
         'Content-Type': 'application/json',

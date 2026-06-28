@@ -75,7 +75,7 @@ export function SearchBar({ bjdong: _bjdong, onSearch, loading }: Props) {
     else if (e.key === 'Enter') {
       e.preventDefault()
       if (activeIdx >= 0 && suggestions[activeIdx]) select(suggestions[activeIdx])
-      else if (suggestions.length === 1) select(suggestions[0])
+      else if (suggestions.length > 0) select(suggestions[0])  // 엔터 → 첫 번째 후보 즉시 선택
     }
   }
 

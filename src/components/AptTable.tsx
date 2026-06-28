@@ -140,18 +140,10 @@ export function AptTable({ results, onRemove }: Props) {
         </thead>
         <tbody>
           {results.length === 0 && (
-            <>
-              <tr className="erow">
-                <td className="rnum">1</td>
-                <td className="cell ld" colSpan={7}>아파트명을 검색하면 여기에 결과가 표시됩니다</td>
-              </tr>
-              {Array.from({ length: 20 }, (_, i) => (
-                <tr key={i + 2} className="erow">
-                  <td className="rnum">{i + 2}</td>
-                  {Array.from({ length: 7 }, (_, j) => <td key={j} className="cell" />)}
-                </tr>
-              ))}
-            </>
+            <tr className="erow">
+              <td className="rnum">1</td>
+              <td className="cell ld" colSpan={7}>아파트명을 검색하면 여기에 결과가 표시됩니다</td>
+            </tr>
           )}
           {results.map(result => {
             const key = `${result.dongCode}-${result.aptName}`
@@ -178,6 +170,13 @@ export function AptTable({ results, onRemove }: Props) {
               </React.Fragment>
             )
           })}
+          {/* 항상 빈 행 채워서 그리드 유지 */}
+          {Array.from({ length: Math.max(0, 20 - globalRow + 1) }, (_, i) => (
+            <tr key={`empty-${i}`} className="erow">
+              <td className="rnum">{globalRow + i}</td>
+              {Array.from({ length: 7 }, (_, j) => <td key={j} className="cell" />)}
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
