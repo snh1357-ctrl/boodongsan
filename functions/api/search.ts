@@ -80,7 +80,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     return new Response(JSON.stringify({ error: 'dongCode and aptName required' }), { status: 400 })
   }
 
-  const cacheKey = new Request(`https://boodongsan-cache.internal/v3/${dongCode}/${encodeURIComponent(aptName)}`)
+  const cacheKey = new Request(`https://boodongsan-cache.internal/v4/${dongCode}/${encodeURIComponent(aptName)}`)
   const cache = (caches as any).default as Cache
   const cached = await cache.match(cacheKey)
   if (cached) return cached

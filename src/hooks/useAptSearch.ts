@@ -25,7 +25,8 @@ export function useAptSearch() {
     setState(prev => ({ ...prev, loading: true, error: null }))
     try {
       const res = await fetch(
-        `/api/search?dongCode=${encodeURIComponent(dongCode)}&aptName=${encodeURIComponent(aptName)}`
+        `/api/search?dongCode=${encodeURIComponent(dongCode)}&aptName=${encodeURIComponent(aptName)}`,
+        { cache: 'no-store' }
       )
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json() as { deals: RawDeal[] }
