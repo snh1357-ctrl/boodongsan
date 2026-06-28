@@ -1,17 +1,8 @@
 // src/components/SearchBar.tsx
-// 호간고노 스타일: 단일 검색창 → 아파트명/동명 통합 자동완성
 import { useState, useEffect, useRef } from 'react'
 import type { BjdongEntry } from '../types'
 
 interface AptEntry { name: string; code: string; emdNm: string }
-
-interface SuggestionItem {
-  type: 'apt' | 'dong'
-  label: string       // 표시 텍스트 (아파트명 or 동명)
-  sub: string         // 부제 (지역명)
-  code: string        // 5자리 시군구코드
-  aptName?: string    // apt 타입일 때 아파트명
-}
 
 interface Props {
   bjdong: BjdongEntry[]
@@ -29,118 +20,102 @@ function toChosung(str: string): string {
   }).join('')
 }
 
-function matches(target: string, q: string): boolean {
-  if (!q) return false
-  if (target.includes(q)) return true
-  const isChosung = [...q].every(c => CHOSUNG.includes(c))
-  if (isChosung) return toChosung(target).includes(q)
+function matchToken(target: string, tok: string): boolean {
+  if (target.includes(tok)) return true
+  if ([...tok].every(c => CHOSUNG.includes(c))) return toChosung(target).includes(tok)
   return false
+}
+
+function scoreApt(apt: AptEntry, tokens: string[]): boolean {
+  // 모든 토큰이 아파트명 또는 지역명에 매칭되어야 함
+  return tokens.every(tok =>
+    matchToken(apt.name, tok) || matchToken(apt.emdNm, tok)
+  )
 }
 
 export function SearchBar({ bjdong, onSearch, loading }: Props) {
   const [query, setQuery] = useState('')
   const [aptIndex, setAptIndex] = useState<AptEntry[]>([])
-  const [suggestions, setSuggestions] = useState<SuggestionItem[]>([])
+  const [aptIndexLoaded, setAptIndexLoaded] = useState(false)
+  const [suggestions, setSuggestions] = useState<AptEntry[]>([])
   const [activeIdx, setActiveIdx] = useState(-1)
   const inputRef = useRef<HTMLInputElement>(null)
-  const mobileInputRef = useRef<HTMLInputElement>(null)
 
-  // apt-index.json 지연 로드
   useEffect(() => {
     fetch('/apt-index.json')
       .then(r => r.ok ? r.json() : [])
-      .then((data: AptEntry[]) => setAptIndex(data))
-      .catch(() => {})
+      .then((data: AptEntry[]) => { setAptIndex(data); setAptIndexLoaded(true) })
+      .catch(() => setAptIndexLoaded(true))
   }, [])
 
-  // 자동완성 계산
   useEffect(() => {
     const q = query.trim()
-    if (q.length < 1) { setSuggestions([]); setActiveIdx(-1); return }
-
-    const items: SuggestionItem[] = []
-
-    // 1. 아파트명 매칭 (최대 6개)
+    if (!q) { setSuggestions([]); setActiveIdx(-1); return }
+    const tokens = q.split(/\s+/).filter(Boolean)
+    const results: AptEntry[] = []
     for (const apt of aptIndex) {
-      if (matches(apt.name, q)) {
-        items.push({ type: 'apt', label: apt.name, sub: apt.emdNm, code: apt.code, aptName: apt.name })
-        if (items.length >= 6) break
+      if (scoreApt(apt, tokens)) {
+        results.push(apt)
+        if (results.length >= 10) break
       }
     }
-
-    // 2. 동 이름 매칭 (최대 3개, 아파트 결과가 적을 때만)
-    if (items.length < 6) {
-      for (const e of bjdong) {
-        if (matches(e.emdNm, q) || matches(e.sigunguNm, q)) {
-          items.push({ type: 'dong', label: e.emdNm, sub: `${e.sidoNm} ${e.sigunguNm}`, code: e.code })
-          if (items.filter(i => i.type === 'dong').length >= 3) break
-        }
-      }
-    }
-
-    setSuggestions(items)
+    setSuggestions(results)
     setActiveIdx(-1)
-  }, [query, aptIndex, bjdong])
+  }, [query, aptIndex])
 
-  const handleSelect = (item: SuggestionItem) => {
-    if (item.type === 'apt') {
-      // 아파트 선택 → 바로 검색
-      setQuery(item.label)
-      setSuggestions([])
-      onSearch(item.code, item.aptName!)
-    } else {
-      // 동 선택 → 아파트명 추가 입력 필요
-      setQuery(item.label + ' ')
-      setSuggestions([])
-      inputRef.current?.focus()
-    }
+  const select = (apt: AptEntry) => {
+    setQuery(apt.name)
+    setSuggestions([])
+    onSearch(apt.code, apt.name)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (suggestions.length > 0) {
-      if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx(i => Math.min(i + 1, suggestions.length - 1)) }
-      else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIdx(i => Math.max(i - 1, -1)) }
-      else if (e.key === 'Enter' && activeIdx >= 0) { e.preventDefault(); handleSelect(suggestions[activeIdx]) }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx(i => Math.min(i + 1, suggestions.length - 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIdx(i => Math.max(i - 1, -1)) }
+    else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (activeIdx >= 0 && suggestions[activeIdx]) select(suggestions[activeIdx])
+      else if (suggestions.length === 1) select(suggestions[0])
     }
   }
 
-  const placeholder = aptIndex.length > 0
-    ? `아파트명 검색 (예: 엘프라우드, ㄹㅁㅇ)`
-    : `아파트명 검색 (예: 래미안, 평촌동)`
+  const placeholder = !aptIndexLoaded
+    ? '로딩중…'
+    : aptIndex.length > 0
+      ? '아파트명 검색 (예: 엘프라우드, ㄹㅁㅇ, 래미안 평촌)'
+      : '아파트명 입력 (예: 래미안대치팰리스)'
 
-  const SuggestionList = ({ mobile = false }: { mobile?: boolean }) => (
-    <div
-      className={mobile ? undefined : 'autocomplete-list'}
-      style={mobile
-        ? { background: '#fff', border: '1px solid #ccc', borderTop: 'none', maxHeight: 240, overflowY: 'auto' }
-        : { position: 'absolute', top: '100%', left: 0, zIndex: 200, width: 360, maxHeight: 280, overflowY: 'auto' }
-      }
-    >
-      {suggestions.map((s, i) => (
-        <div
-          key={`${s.type}-${s.label}-${s.code}`}
-          className={mobile ? undefined : `autocomplete-item${i === activeIdx ? ' active' : ''}`}
-          style={mobile ? {
-            padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #f0f0f0',
-            background: i === activeIdx ? '#f0f7f0' : 'transparent',
-          } : undefined}
-          onClick={() => handleSelect(s)}
-        >
-          {s.type === 'apt' ? (
-            <>
-              <span className={mobile ? undefined : 'ac-symbol'} style={mobile ? { fontWeight: 600, fontSize: 13 } : undefined}>{s.label}</span>
-              <span className={mobile ? undefined : 'ac-name'} style={mobile ? { fontSize: 11, color: '#888', marginLeft: 6 } : undefined}>{s.sub}</span>
-            </>
-          ) : (
-            <>
-              <span className={mobile ? undefined : 'ac-symbol'} style={mobile ? { fontSize: 13 } : undefined}>📍 {s.label}</span>
-              <span className={mobile ? undefined : 'ac-name'} style={mobile ? { fontSize: 11, color: '#888', marginLeft: 6 } : undefined}>{s.sub}</span>
-            </>
-          )}
-        </div>
-      ))}
-    </div>
-  )
+  const DropdownList = ({ isMobile = false }: { isMobile?: boolean }) =>
+    suggestions.length === 0 ? null : (
+      <div style={{
+        position: isMobile ? 'static' : 'absolute',
+        top: isMobile ? undefined : '100%',
+        left: 0, zIndex: 300,
+        width: isMobile ? '100%' : 380,
+        background: '#fff',
+        border: '1px solid #ccc',
+        borderTop: isMobile ? 'none' : '1px solid #ccc',
+        boxShadow: isMobile ? 'none' : '0 2px 8px rgba(0,0,0,0.15)',
+        maxHeight: 280, overflowY: 'auto',
+      }}>
+        {suggestions.map((apt, i) => (
+          <div
+            key={`${apt.name}|${apt.code}`}
+            // onMouseDown 사용: blur보다 먼저 발생해서 드롭다운이 닫히기 전에 선택됨
+            onMouseDown={(e) => { e.preventDefault(); select(apt) }}
+            style={{
+              padding: '8px 12px', cursor: 'pointer',
+              borderBottom: '1px solid #f0f0f0',
+              background: i === activeIdx ? '#e8f5e9' : 'transparent',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            }}
+          >
+            <span style={{ fontWeight: 500, fontSize: 13 }}>{apt.name}</span>
+            <span style={{ fontSize: 11, color: '#888' }}>{apt.emdNm}</span>
+          </div>
+        ))}
+      </div>
+    )
 
   return (
     <>
@@ -154,22 +129,18 @@ export function SearchBar({ bjdong, onSearch, loading }: Props) {
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            onBlur={() => setTimeout(() => setSuggestions([]), 150)}
             style={{ flex: 1 }}
             autoComplete="off"
           />
-          {suggestions.length > 0 && <SuggestionList />}
+          <DropdownList />
         </div>
         <button
           className="xl-addbtn"
           onClick={() => {
-            const q = query.trim()
-            if (!q || loading) return
-            // 동명 + 아파트명 형식 처리
-            const dong = bjdong.find(e => q.startsWith(e.emdNm))
-            if (dong) onSearch(dong.code, q.slice(dong.emdNm.length).trim() || q)
+            if (suggestions.length === 1) select(suggestions[0])
+            else if (suggestions.length > 1) select(suggestions[activeIdx >= 0 ? activeIdx : 0])
           }}
-          disabled={!query.trim() || loading}
+          disabled={!query.trim() || loading || suggestions.length === 0}
         >
           {loading ? '조회중…' : '조회'}
         </button>
@@ -182,7 +153,6 @@ export function SearchBar({ bjdong, onSearch, loading }: Props) {
         </div>
         <div className="mob-row2">
           <input
-            ref={mobileInputRef}
             placeholder={placeholder}
             value={query}
             onChange={e => setQuery(e.target.value)}
@@ -191,18 +161,13 @@ export function SearchBar({ bjdong, onSearch, loading }: Props) {
           />
           <button
             className="mob-addbtn"
-            onClick={() => {
-              const q = query.trim()
-              if (!q || loading) return
-              const dong = bjdong.find(e => q.startsWith(e.emdNm))
-              if (dong) onSearch(dong.code, q.slice(dong.emdNm.length).trim() || q)
-            }}
-            disabled={!query.trim() || loading}
+            onClick={() => { if (suggestions.length > 0) select(suggestions[activeIdx >= 0 ? activeIdx : 0]) }}
+            disabled={!query.trim() || loading || suggestions.length === 0}
           >
             {loading ? '…' : '조회'}
           </button>
         </div>
-        {suggestions.length > 0 && <SuggestionList mobile />}
+        <DropdownList isMobile />
       </div>
     </>
   )
