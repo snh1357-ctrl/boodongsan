@@ -30,4 +30,3 @@ dist-ssr
 .superpowers/
 scripts/*.xlsx
 scripts/*.txt
-public/apt-index.json
