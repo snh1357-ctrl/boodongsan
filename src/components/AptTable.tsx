@@ -139,12 +139,6 @@ export function AptTable({ results, onRemove }: Props) {
           </tr>
         </thead>
         <tbody>
-          {results.length === 0 && (
-            <tr className="erow">
-              <td className="rnum">1</td>
-              <td className="cell ld" colSpan={7}>아파트명을 검색하면 여기에 결과가 표시됩니다</td>
-            </tr>
-          )}
           {results.map(result => {
             const key = `${result.dongCode}-${result.aptName}`
             const isExpanded = expanded.has(key)

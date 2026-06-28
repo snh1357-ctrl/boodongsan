@@ -40,6 +40,7 @@ export function SearchBar({ bjdong: _bjdong, onSearch, loading }: Props) {
   const [suggestions, setSuggestions] = useState<AptEntry[]>([])
   const [activeIdx, setActiveIdx] = useState(-1)
   const inputRef = useRef<HTMLInputElement>(null)
+  const skipSearchRef = useRef(false)  // select 후 query 변경으로 인한 재검색 방지
 
   useEffect(() => {
     fetch('/apt-index.json')
@@ -49,6 +50,7 @@ export function SearchBar({ bjdong: _bjdong, onSearch, loading }: Props) {
   }, [])
 
   useEffect(() => {
+    if (skipSearchRef.current) { skipSearchRef.current = false; return }
     const q = query.trim()
     if (!q) { setSuggestions([]); setActiveIdx(-1); return }
     const tokens = q.split(/\s+/).filter(Boolean)
@@ -64,8 +66,10 @@ export function SearchBar({ bjdong: _bjdong, onSearch, loading }: Props) {
   }, [query, aptIndex])
 
   const select = (apt: AptEntry) => {
+    skipSearchRef.current = true  // 다음 useEffect 스킵
     setQuery(apt.name)
     setSuggestions([])
+    setActiveIdx(-1)
     onSearch(apt.code, apt.name)
   }
 
