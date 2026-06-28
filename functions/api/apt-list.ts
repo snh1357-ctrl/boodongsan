@@ -23,15 +23,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const names = new Set<string>()
   await Promise.all(months.map(async ym => {
-    const params = new URLSearchParams({
-      serviceKey: env.MOLIT_API_KEY,
-      LAWD_CD: dongCode,
-      DEAL_YMD: ym,
-      numOfRows: '1000',
-      pageNo: '1',
-    })
+    const url = `https://apis.data.go.kr/1613000/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade?serviceKey=${env.MOLIT_API_KEY}&LAWD_CD=${dongCode}&DEAL_YMD=${ym}&numOfRows=1000&pageNo=1`
     try {
-      const res = await fetch(`https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev?${params}`)
+      const res = await fetch(url)
       const text = await res.text()
       for (const m of text.matchAll(/<aptNm>([^<]+)<\/aptNm>/g)) {
         names.add(m[1].trim())

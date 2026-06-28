@@ -33,19 +33,16 @@ function currentYYYYMM(): string {
   return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
-async function fetchMonth(apiKey: string, dongCode: string, ym: string): Promise<MolitItem[]> {
-  const baseParams = new URLSearchParams({
-    serviceKey: apiKey,
-    LAWD_CD: dongCode,
-    DEAL_YMD: ym,
-    numOfRows: '1000',
-    _type: 'json',
-  })
+const BASE_URL = 'https://apis.data.go.kr/1613000/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade'
 
-  // Fetch first page to get totalCount
-  const firstUrl = `https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev?${baseParams}&pageNo=1`
+function molitUrl(apiKey: string, dongCode: string, ym: string, page: number): string {
+  // serviceKey는 이미 인코딩된 키이므로 직접 붙임 (URLSearchParams 사용 시 이중인코딩 발생)
+  return `${BASE_URL}?serviceKey=${apiKey}&LAWD_CD=${dongCode}&DEAL_YMD=${ym}&numOfRows=1000&pageNo=${page}&_type=json`
+}
+
+async function fetchMonth(apiKey: string, dongCode: string, ym: string): Promise<MolitItem[]> {
   try {
-    const res = await fetch(firstUrl)
+    const res = await fetch(molitUrl(apiKey, dongCode, ym, 1))
     if (!res.ok) return []
     const data = await res.json() as any
     const body = data?.response?.body
@@ -59,9 +56,8 @@ async function fetchMonth(apiKey: string, dongCode: string, ym: string): Promise
 
     if (totalPages <= 1) return firstPage
 
-    // Fetch remaining pages
     const pagePromises = Array.from({ length: totalPages - 1 }, (_, i) =>
-      fetch(`https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev?${baseParams}&pageNo=${i + 2}`)
+      fetch(molitUrl(apiKey, dongCode, ym, i + 2))
         .then(r => r.ok ? r.json() : null)
         .then((d: any) => {
           const it = d?.response?.body?.items?.item
