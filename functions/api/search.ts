@@ -73,42 +73,35 @@ async function fetchMonth(apiKey: string, dongCode: string, ym: string): Promise
 
 export const onRequestGet: PagesFunction<Env> = async (context) => {
   const url = new URL(context.request.url)
-  const dongCode = url.searchParams.get('dongCode')
-  const aptName  = url.searchParams.get('aptName')
+  const dongCode  = url.searchParams.get('dongCode')
+  const aptName   = url.searchParams.get('aptName')
+  const fromYear  = parseInt(url.searchParams.get('fromYear') || '2022')
+  const toYear    = parseInt(url.searchParams.get('toYear')   || String(new Date().getFullYear()))
 
   if (!dongCode || !aptName) {
     return new Response(JSON.stringify({ error: 'dongCode and aptName required' }), { status: 400 })
   }
 
-  const cacheKey = new Request(`https://boodongsan-cache.internal/v4/${dongCode}/${encodeURIComponent(aptName)}`)
-  const cache = (caches as any).default as Cache
-  const cached = await cache.match(cacheKey)
-  if (cached) return cached
+  // 요청 연도 범위 내 월 목록 (최대 45개 = 서브요청 50개 안전 마진)
+  const months = generateMonths(fromYear)
+    .filter(ym => parseInt(ym.slice(0, 4)) <= toYear)
+    .slice(-45)
 
-  // 무료 플랜 서브요청 50개 제한 → 최대 45개월 (안전 마진 5개)
-  const months = generateMonths(2022)  // 약 54개월이지만 최신 45개만 사용
-  const safeMonths = months.slice(-45) // 가장 최근 45개월
+  const results = await Promise.all(months.map(ym => fetchMonth(context.env.MOLIT_API_KEY, dongCode, ym)))
+  const allDeals = results.flat()
 
-  const allDeals: MolitItem[] = []
-  const results = await Promise.all(safeMonths.map(ym => fetchMonth(context.env.MOLIT_API_KEY, dongCode, ym)))
-  allDeals.push(...results.flat())
-
-  // MOLIT API는 "아파트" 접미사 없이 저장 (예: "평촌엘프라우드")
-  // K-apt는 "아파트" 포함 (예: "평촌엘프라우드아파트") → 양쪽 모두 제거 후 비교
+  // MOLIT API는 "아파트" 접미사 없이 저장하는 경우 많음 → 양쪽 제거 후 비교 + 부분 매칭 폴백
   const normalize = (s: string) => s.replace(/\s/g, '').replace(/아파트$/, '').toLowerCase()
   const normTarget = normalize(aptName)
-  const aptDeals = allDeals.filter(d => normalize(d.aptNm ?? '') === normTarget)
+  const aptDeals = allDeals.filter(d => {
+    const n = normalize(d.aptNm ?? '')
+    return n === normTarget || n.includes(normTarget) || normTarget.includes(n)
+  })
 
   const foundNames = [...new Set(allDeals.map(d => d.aptNm).filter(Boolean))].slice(0, 30)
 
-  const body = JSON.stringify({ aptName, dongCode, deals: aptDeals, debug: { total: allDeals.length, foundNames } })
-  const response = new Response(body, {
-    headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'public, max-age=86400',
-      'Access-Control-Allow-Origin': '*',
-    },
-  })
-  context.waitUntil(cache.put(cacheKey, response.clone()))
-  return response
+  return new Response(
+    JSON.stringify({ aptName, dongCode, deals: aptDeals, debug: { total: allDeals.length, months: months.length, foundNames } }),
+    { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
+  )
 }
