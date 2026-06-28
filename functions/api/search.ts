@@ -85,19 +85,17 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   const cached = await cache.match(cacheKey)
   if (cached) return cached
 
-  // 2015년부터 현재까지 (약 140개월, 병렬 처리)
-  const months = generateMonths(2015)
+  // 무료 플랜 서브요청 50개 제한 → 최대 45개월 (안전 마진 5개)
+  const months = generateMonths(2022)  // 약 54개월이지만 최신 45개만 사용
+  const safeMonths = months.slice(-45) // 가장 최근 45개월
 
-  // 30개씩 배치 처리
-  const BATCH = 30
   const allDeals: MolitItem[] = []
-  for (let i = 0; i < months.length; i += BATCH) {
-    const batch = months.slice(i, i + BATCH)
-    const results = await Promise.all(batch.map(ym => fetchMonth(context.env.MOLIT_API_KEY, dongCode, ym)))
-    allDeals.push(...results.flat())
-  }
+  const results = await Promise.all(safeMonths.map(ym => fetchMonth(context.env.MOLIT_API_KEY, dongCode, ym)))
+  allDeals.push(...results.flat())
 
-  const normalize = (s: string) => s.replace(/\s/g, '').toLowerCase()
+  // MOLIT API는 "아파트" 접미사 없이 저장 (예: "평촌엘프라우드")
+  // K-apt는 "아파트" 포함 (예: "평촌엘프라우드아파트") → 양쪽 모두 제거 후 비교
+  const normalize = (s: string) => s.replace(/\s/g, '').replace(/아파트$/, '').toLowerCase()
   const normTarget = normalize(aptName)
   const aptDeals = allDeals.filter(d => normalize(d.aptNm ?? '') === normTarget)
 
