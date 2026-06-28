@@ -119,23 +119,39 @@ export function AptTable({ results, onRemove }: Props) {
           <col style={{ width: 70 }} />
         </colgroup>
         <thead>
+          {/* 열 문자 헤더 (Excel 스타일) */}
+          <tr>
+            <td className="hcell" style={{ position: 'sticky', top: 0, zIndex: 10 }} />
+            {['A','B','C','D','E','F','G'].map(c => (
+              <td key={c} className="hcell" style={{ position: 'sticky', top: 0, zIndex: 10, textAlign: 'center' }}>{c}</td>
+            ))}
+          </tr>
+          {/* 데이터 헤더 */}
           <tr className="hdr-row">
-            <td className="rnum" />
-            <td className="cell">아파트명</td>
-            <td className="cell r">최근 거래가</td>
-            <td className="cell r">3개월 평균</td>
-            <td className="cell r">역대 최고가</td>
-            <td className="cell r">최고가 대비</td>
-            <td className="cell r">3개월 건수</td>
-            <td className="cell" />
+            <td className="rnum" style={{ position: 'sticky', top: 20, zIndex: 9 }} />
+            <td className="cell" style={{ position: 'sticky', top: 20, zIndex: 9 }}>아파트명</td>
+            <td className="cell r" style={{ position: 'sticky', top: 20, zIndex: 9 }}>최근 거래가</td>
+            <td className="cell r" style={{ position: 'sticky', top: 20, zIndex: 9 }}>3개월 평균</td>
+            <td className="cell r" style={{ position: 'sticky', top: 20, zIndex: 9 }}>역대 최고가</td>
+            <td className="cell r" style={{ position: 'sticky', top: 20, zIndex: 9 }}>최고가 대비</td>
+            <td className="cell r" style={{ position: 'sticky', top: 20, zIndex: 9 }}>3개월 건수</td>
+            <td className="cell" style={{ position: 'sticky', top: 20, zIndex: 9 }} />
           </tr>
         </thead>
         <tbody>
           {results.length === 0 && (
-            <tr className="erow">
-              <td className="rnum">1</td>
-              <td className="cell ld" colSpan={7}>아파트명을 검색하면 여기에 결과가 표시됩니다</td>
-            </tr>
+            <>
+              <tr className="erow">
+                <td className="rnum">1</td>
+                <td className="cell ld" colSpan={7}>아파트명을 검색하면 여기에 결과가 표시됩니다</td>
+              </tr>
+              {Array.from({ length: 20 }, (_, i) => (
+                <tr key={i + 2} className="erow">
+                  <td className="rnum">{i + 2}</td>
+                  {Array.from({ length: 7 }, (_, j) => <td key={j} className="cell" />)}
+                </tr>
+              ))}
+            </>
           )}
           {results.map(result => {
             const key = `${result.dongCode}-${result.aptName}`

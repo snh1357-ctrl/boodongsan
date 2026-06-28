@@ -307,6 +307,9 @@
     .fl-g { animation: fl-up 1s ease-out; }
     .fl-r { animation: fl-dn 1s ease-out; }
 
+    /* 모바일 헤더: 기본 숨김, 모바일에서만 표시 */
+    #mobileHeader { display: none; }
+
     /* ── Formula Bar ───────────────────────────────────────── */
     .xl-fbar {
       background: #fff; border-bottom: 1px solid #d7d7d7;
