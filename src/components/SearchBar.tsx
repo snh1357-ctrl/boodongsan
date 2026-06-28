@@ -85,9 +85,7 @@ export function SearchBar({ bjdong: _bjdong, onSearch, loading }: Props) {
 
   const placeholder = !aptIndexLoaded
     ? '로딩중…'
-    : aptIndex.length > 0
-      ? '아파트명 검색 (예: 엘프라우드, ㄹㅁㅇ, 래미안 평촌)'
-      : '아파트명 입력 (예: 래미안대치팰리스)'
+    : '아파트명 검색 (초성 검색 지원: ㄹㅁㅇ, 지역명+아파트명 조합 가능)'
 
   const DropdownList = ({ isMobile = false }: { isMobile?: boolean }) =>
     suggestions.length === 0 ? null : (

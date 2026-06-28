@@ -1,5 +1,5 @@
 // src/components/ExcelShell.tsx
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 
 const SHEET_TABS = [
   { id: 'apt', label: '아파트' },
@@ -13,9 +13,43 @@ interface Props {
   children: ReactNode
   statusText?: string
   resultCount?: number
+  onRefresh?: () => void
 }
 
-export function ExcelShell({ activeTab, onTabChange, children, statusText, resultCount = 0 }: Props) {
+function toggleDarkMode() {
+  const on = document.body.classList.toggle('dark')
+  localStorage.setItem('darkMode', on ? '1' : '')
+  const btn = document.getElementById('darkModeBtn')
+  if (btn) {
+    btn.querySelector('.btn-icon')!.textContent = on ? '☀' : '🌙'
+    btn.querySelector('.btn-lbl')!.textContent = on ? ' 라이트' : ' 다크'
+  }
+}
+
+function toggleAllBlack() {
+  const on = document.body.classList.toggle('all-black')
+  localStorage.setItem('allBlack', on ? '1' : '')
+  const btn = document.getElementById('allBlackBtn')
+  if (btn) btn.querySelector('.btn-lbl')!.textContent = on ? ' 컬러' : ' 올블랙'
+}
+
+export function ExcelShell({ activeTab, onTabChange, children, statusText, resultCount = 0, onRefresh }: Props) {
+  useEffect(() => {
+    if (localStorage.getItem('darkMode')) {
+      document.body.classList.add('dark')
+      const btn = document.getElementById('darkModeBtn')
+      if (btn) {
+        btn.querySelector('.btn-icon')!.textContent = '☀'
+        btn.querySelector('.btn-lbl')!.textContent = ' 라이트'
+      }
+    }
+    if (localStorage.getItem('allBlack')) {
+      document.body.classList.add('all-black')
+      const btn = document.getElementById('allBlackBtn')
+      if (btn) btn.querySelector('.btn-lbl')!.textContent = ' 컬러'
+    }
+  }, [])
+
   return (
     <div className="xl">
       <div id="xlTopScroll">
@@ -110,11 +144,11 @@ export function ExcelShell({ activeTab, onTabChange, children, statusText, resul
             <div className="rg rg-deco rg-d3">
               <div className="rg-top col">
                 <div style={{display:'flex',gap:1}}>
-                  <button className="rb sq" title="위쪽 맞춤">⊤</button>
-                  <button className="rb sq" title="가운데 맞춤">⊟</button>
-                  <button className="rb sq" title="아래쪽 맞춤">⊥</button>
+                  <button className="rb sq">⊤</button>
+                  <button className="rb sq">⊟</button>
+                  <button className="rb sq">⊥</button>
                   <span className="rg-sep"/>
-                  <button className="rb sq" title="자동 줄 바꿈" style={{fontSize:9}}>↵줄</button>
+                  <button className="rb sq" style={{fontSize:9}}>↵줄</button>
                 </div>
                 <div style={{display:'flex',gap:1}}>
                   <button className="rb sq">≡</button>
@@ -167,37 +201,39 @@ export function ExcelShell({ activeTab, onTabChange, children, statusText, resul
               <div className="rg-lbl">셀</div>
             </div>
 
-            {/* 데이터 새로고침 */}
+            {/* 데이터 새로고침 + 다크/올블랙 */}
             <div className="rg">
               <div className="rg-top" style={{alignItems:'center',gap:3}}>
-                <button className="rb lg refresh">
+                <button
+                  id="refreshBtn"
+                  className="rb lg refresh"
+                  onClick={onRefresh}
+                >
                   <span className="ricon btn-icon" style={{fontSize:22}}>↻</span>
                   <span className="rlbl">새로고침</span>
                 </button>
                 <div style={{display:'flex',flexDirection:'column',gap:2,height:68,justifyContent:'center'}}>
-                  <button className="rb" style={{fontSize:10}}>🌙 다크</button>
-                  <button className="rb" style={{fontSize:10}}>🌐 지역</button>
+                  <button
+                    id="darkModeBtn"
+                    className="rb"
+                    style={{fontSize:10,padding:'2px 8px',height:20,gap:3}}
+                    onClick={toggleDarkMode}
+                  >
+                    <span className="btn-icon" style={{fontSize:15,lineHeight:1}}>🌙</span>
+                    <span className="btn-lbl"> 다크</span>
+                  </button>
+                  <button
+                    id="allBlackBtn"
+                    className="rb"
+                    style={{fontSize:10,padding:'2px 8px',height:20,gap:3}}
+                    onClick={toggleAllBlack}
+                  >
+                    <span className="btn-icon" style={{fontSize:15,lineHeight:1}}>🖌</span>
+                    <span className="btn-lbl"> 올블랙</span>
+                  </button>
                 </div>
               </div>
               <div className="rg-lbl">데이터</div>
-            </div>
-
-            {/* 필터 */}
-            <div className="rg">
-              <div className="rg-top" style={{alignItems:'center',gap:3}}>
-                <div style={{display:'flex',flexDirection:'column',gap:2,height:68,justifyContent:'center'}}>
-                  <button className="rb rb-active">
-                    <span className="mkt-badge all">ALL</span> 전체
-                  </button>
-                  <button className="rb">
-                    <span className="mkt-badge us" style={{background:'#1a3a6b'}}>수도</span> 수도권
-                  </button>
-                  <button className="rb">
-                    <span className="mkt-badge kr">지방</span> 지방
-                  </button>
-                </div>
-              </div>
-              <div className="rg-lbl">필터</div>
             </div>
 
           </div>

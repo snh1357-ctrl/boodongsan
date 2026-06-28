@@ -85,11 +85,14 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('apt')
   const { results, loading, error, search, removeResult } = useAptSearch()
 
+  const handleRefresh = () => window.location.reload()
+
   return (
     <ExcelShell
       activeTab={activeTab}
       onTabChange={setActiveTab}
       resultCount={results.length}
+      onRefresh={handleRefresh}
       statusText={
         loading ? '데이터 조회중… (전체 기간 최초 조회는 20~40초 소요)' :
         error ? `오류: ${error}` :

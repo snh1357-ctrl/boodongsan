@@ -165,7 +165,7 @@ export function AptTable({ results, onRemove }: Props) {
             )
           })}
           {/* 항상 빈 행 채워서 그리드 유지 */}
-          {Array.from({ length: Math.max(0, 20 - globalRow + 1) }, (_, i) => (
+          {Array.from({ length: Math.max(0, 100 - globalRow + 1) }, (_, i) => (
             <tr key={`empty-${i}`} className="erow">
               <td className="rnum">{globalRow + i}</td>
               {Array.from({ length: 7 }, (_, j) => <td key={j} className="cell" />)}

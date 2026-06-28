@@ -1,5 +1,5 @@
 // src/hooks/useAptSearch.ts
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import type { AptResult, RawDeal } from '../types'
 import { aggregateByArea } from '../lib/aggregate'
 
@@ -14,12 +14,20 @@ interface SearchState {
   error: string | null
 }
 
+function loadSavedResults(): AptResult[] {
+  try { return JSON.parse(localStorage.getItem('apt_results') || '[]') } catch { return [] }
+}
+
 export function useAptSearch() {
-  const [state, setState] = useState<SearchState>({
-    results: [],
+  const [state, setState] = useState<SearchState>(() => ({
+    results: loadSavedResults(),
     loading: false,
     error: null,
-  })
+  }))
+
+  useEffect(() => {
+    try { localStorage.setItem('apt_results', JSON.stringify(state.results)) } catch {}
+  }, [state.results])
 
   const search = useCallback(async ({ dongCode, aptName }: SearchParams) => {
     setState(prev => ({ ...prev, loading: true, error: null }))
