@@ -1,83 +1,94 @@
 // scripts/gen-apt-index.mjs
-// 기존 거래 API(이미 승인됨)로 최근 12개월 아파트 목록 수집 → public/apt-index.json
+// 공동주택 단지 기본정보 엑셀 → public/apt-index.json 변환
 // 실행: node scripts/gen-apt-index.mjs
+import XLSX from 'xlsx'
 import { readFileSync, writeFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-let apiKey = process.env.MOLIT_API_KEY
-if (!apiKey) {
-  try {
-    const devVars = readFileSync(resolve(__dirname, '../.dev.vars'), 'utf-8')
-    apiKey = devVars.match(/MOLIT_API_KEY=(.+)/)?.[1]?.trim()
-  } catch {}
-}
-if (!apiKey || apiKey.includes('여기에')) {
-  console.error('❌ .dev.vars 파일에 실제 MOLIT_API_KEY를 입력하세요')
-  process.exit(1)
-}
-
+// bjdong.json에서 법정동명 → 5자리코드 매핑
 const bjdong = JSON.parse(readFileSync(resolve(__dirname, '../src/data/bjdong.json'), 'utf-8'))
-const codes = [...new Set(bjdong.map(e => e.code))]
 
-// 최근 12개월 YYYYMM 목록
-const months = []
-const now = new Date()
-for (let i = 0; i < 12; i++) {
-  const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-  months.push(`${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`)
-}
-
-console.log(`총 ${codes.length}개 시군구 × ${months.length}개월 → 수집 시작`)
-console.log('예상 소요 시간: 5~10분\n')
-
-// bjdong에서 동 이름 빠르게 찾기
-const codeToEmd = {}
+// "서울특별시 강남구 대치동" → code 매핑
+const fullNmToCode = {}
+const emdToCode = {}  // "시군구|동리" → code
 for (const e of bjdong) {
-  if (!codeToEmd[e.code]) codeToEmd[e.code] = e.emdNm
+  fullNmToCode[e.fullNm] = e.code
+  const key = `${e.sigunguNm}|${e.emdNm}`
+  if (!emdToCode[key]) emdToCode[key] = e.code
 }
 
-async function fetchMonth(code, ym) {
-  const params = new URLSearchParams({
-    serviceKey: apiKey,
-    LAWD_CD: code,
-    DEAL_YMD: ym,
-    numOfRows: '1000',
-    pageNo: '1',
-  })
-  try {
-    const url = `https://apis.data.go.kr/1613000/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade?serviceKey=${apiKey}&LAWD_CD=${code}&DEAL_YMD=${ym}&numOfRows=1000&pageNo=1`
-    const res = await fetch(url)
-    const text = await res.text()
-    return [...text.matchAll(/<aptNm>([^<]+)<\/aptNm>/g)].map(m => m[1].trim())
-  } catch {
-    return []
-  }
-}
+// 엑셀 읽기
+const inputPath = resolve(__dirname, '20260626_단지_기본정보.xlsx')
+const wb = XLSX.readFile(inputPath)
+const ws = wb.Sheets[wb.SheetNames[0]]
+const rows = XLSX.utils.sheet_to_json(ws, { header: 1 })
 
-const index = new Map() // "name|code" → { name, code, emdNm }
-let done = 0
+// 헤더 행 찾기 (첫 번째 데이터 행 = 두 번째 행)
+const headers = rows[1]
+const colIdx = (name) => headers.indexOf(name)
 
-for (let i = 0; i < codes.length; i += 10) {
-  const batch = codes.slice(i, i + 10)
-  await Promise.all(batch.map(async code => {
-    // 최근 3개월만 (속도 우선, 충분한 커버리지)
-    const results = await Promise.all(months.slice(0, 3).map(ym => fetchMonth(code, ym)))
-    const names = [...new Set(results.flat())]
-    for (const name of names) {
-      const key = `${name}|${code}`
-      if (!index.has(key)) {
-        index.set(key, { name, code, emdNm: codeToEmd[code] ?? '' })
+const 시도Col = colIdx('시도')
+const 시군구Col = colIdx('시군구')
+const 읍면Col = colIdx('읍면')
+const 동리Col = colIdx('동리')
+const 단지명Col = colIdx('단지명')
+const 단지분류Col = colIdx('단지분류')
+const 법정동주소Col = colIdx('법정동주소')
+
+console.log('컬럼 인덱스:', { 시도: 시도Col, 시군구: 시군구Col, 동리: 동리Col, 단지명: 단지명Col })
+
+const result = []
+let notFound = 0
+
+for (const row of rows.slice(2)) {
+  const name = String(row[단지명Col] ?? '').trim()
+  if (!name) continue
+
+  // 아파트만 (단지분류가 있으면 필터)
+  const 분류 = String(row[단지분류Col] ?? '').trim()
+  if (분류 && !분류.includes('아파트') && !분류.includes('주상복합')) continue
+
+  const 시도 = String(row[시도Col] ?? '').trim()
+  const 시군구 = String(row[시군구Col] ?? '').trim()
+  const 읍면 = String(row[읍면Col] ?? '').trim()
+  const 동리 = String(row[동리Col] ?? '').trim()
+
+  // 법정동코드 매핑 시도
+  let code = ''
+
+  // 시도+시군구+동리로 매핑
+  const key1 = `${시군구}|${동리}`
+  const key2 = `${시군구}|${읍면}`
+  if (emdToCode[key1]) code = emdToCode[key1]
+  else if (emdToCode[key2]) code = emdToCode[key2]
+
+  // 법정동주소로 매핑
+  if (!code && 법정동주소Col >= 0) {
+    const addr = String(row[법정동주소Col] ?? '').trim()
+    for (const [fullNm, c] of Object.entries(fullNmToCode)) {
+      if (addr.includes(fullNm.split(' ').slice(-1)[0])) {
+        code = c; break
       }
     }
-  }))
-  done += batch.length
-  process.stdout.write(`\r진행: ${done}/${codes.length} 시군구 | ${index.size}개 아파트`)
+  }
+
+  if (!code) { notFound++; continue }
+
+  result.push({ name, code, emdNm: 동리 || 읍면 })
 }
 
-const result = [...index.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+// 중복 제거
+const seen = new Set()
+const unique = result.filter(a => {
+  const key = `${a.name}|${a.code}`
+  if (seen.has(key)) return false
+  seen.add(key); return true
+})
+
 const outputPath = resolve(__dirname, '../public/apt-index.json')
-writeFileSync(outputPath, JSON.stringify(result))
-console.log(`\n\n✅ 완료: ${result.length}개 아파트 → public/apt-index.json`)
+writeFileSync(outputPath, JSON.stringify(unique))
+console.log(`✅ 완료: ${unique.length}개 아파트 → public/apt-index.json`)
+console.log(`   코드 매핑 실패: ${notFound}개`)
