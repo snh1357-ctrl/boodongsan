@@ -33,11 +33,15 @@ function ChangeCell({ rate }: { rate: number }) {
   )
 }
 
+function toPyeong(area: number): number {
+  return Math.round(area / 3.305785)
+}
+
 function UnitRow({ unit, rowNum }: { unit: AptUnit; rowNum: number }) {
   return (
     <tr className="srow">
       <td className="rnum">{rowNum}</td>
-      <td className="cell" style={{ paddingLeft: 48 }}>{unit.area}㎡</td>
+      <td className="cell" style={{ paddingLeft: 48 }}>{unit.area}㎡ <span style={{ color: '#888', fontSize: 10 }}>({toPyeong(unit.area)}평)</span></td>
       <td className="cell r">
         <div>{formatPrice(unit.lastDeal.price)}</div>
         <div className="ext-row">{unit.lastDeal.date}</div>
@@ -75,6 +79,7 @@ function AptRow({
       <td className="cell tick co-cell" style={{ paddingLeft: 24 }}>
         <span style={{ marginRight: 4 }}>{expanded ? '▾' : '▸'}</span>
         {result.aptName}
+        {result.buildYear && <div className="ext-row">{result.buildYear}년 준공</div>}
       </td>
       {summary ? (
         <>
@@ -156,7 +161,7 @@ export function AptTable({ results, onRemove, onRemoveGroup }: Props) {
     <div className="xl-sheet">
       <table className="xl-table" style={{ width: '100%' }}>
         <colgroup>
-          <col style={{ width: 38 }} />
+          <col style={{ width: 28 }} />
           <col style={{ width: 200 }} />
           <col style={{ width: 160 }} />
           <col style={{ width: 140 }} />

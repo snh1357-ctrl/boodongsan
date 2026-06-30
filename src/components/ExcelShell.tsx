@@ -71,13 +71,23 @@ export function ExcelShell({ activeTab, onTabChange, children, statusText, resul
                   <rect x="2.5" y="7.5" width="9" height="4.5" rx="0.5" stroke="rgba(255,255,255,0.9)" strokeWidth="1.1" fill="none"/>
                 </svg>
               </button>
-              <button className="xl-qat-btn dim">↩</button>
-              <button className="xl-qat-btn dim">↪</button>
+              <button className="xl-qat-btn dim" title="실행 취소">
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                  <path d="M2 5.5 C2 3 4 1.5 6.5 1.5 C9 1.5 11 3.5 11 6 C11 8.5 9 10.5 6.5 10.5 C5 10.5 3.7 9.8 2.9 8.7" stroke="rgba(255,255,255,0.9)" strokeWidth="1.3" fill="none" strokeLinecap="round"/>
+                  <polyline points="2,2.5 2,5.5 5,5.5" stroke="rgba(255,255,255,0.9)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                </svg>
+              </button>
+              <button className="xl-qat-btn dim" title="다시 실행">
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                  <path d="M11 5.5 C11 3 9 1.5 6.5 1.5 C4 1.5 2 3.5 2 6 C2 8.5 4 10.5 6.5 10.5 C8 10.5 9.3 9.8 10.1 8.7" stroke="rgba(255,255,255,0.9)" strokeWidth="1.3" fill="none" strokeLinecap="round"/>
+                  <polyline points="11,2.5 11,5.5 8,5.5" stroke="rgba(255,255,255,0.9)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                </svg>
+              </button>
             </div>
             <span className="xl-title-text">{activeTab === 'stock' ? 'ATH 트래커.xlsx — 주식' : '아파트 실거래가.xlsx — 부동산'}</span>
-            <div className="xl-search">
+            <div className="xl-search" onClick={() => document.querySelector<HTMLInputElement>('.xl-finput')?.focus()}>
               <span className="xl-search-ico">🔍</span>
-              <input className="xl-search-inp" type="text" placeholder="검색 (Alt+Q)" readOnly />
+              <input className="xl-search-inp" type="text" placeholder="검색 (Alt+Q)" readOnly style={{ cursor: 'pointer' }} />
             </div>
             <div className="xl-title-right">
               <div className="xl-avatar" title="계정">부</div>

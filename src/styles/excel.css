@@ -340,6 +340,11 @@
       background: transparent; height: 100%; color: #212121;
     }
     .xl-finput::placeholder { color: #999; font-style: italic; }
+    @keyframes search-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(16,124,65,0); }
+      50% { box-shadow: 0 0 0 3px rgba(16,124,65,0.3); }
+    }
+    .xl-fbar:focus-within { animation: search-pulse 1.6s ease-in-out infinite; }
     .xl-addbtn {
       background: #107c41; color: #fff; border: none;
       padding: 0 14px; font-size: 11px; font-weight: 600;

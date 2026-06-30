@@ -6,6 +6,7 @@ export interface RawDeal {
   dealMonth: string
   dealDay: string
   floor: string
+  buildYear?: string   // 건축년도 (MOLIT 제공)
 }
 
 export interface DealPoint {
@@ -28,6 +29,7 @@ export interface AptResult {
   dongCode: string
   units: AptUnit[]      // area 오름차순 정렬
   athLoaded?: boolean   // ATH 전체 기간 조회 완료 여부
+  buildYear?: string    // 건축년도
 }
 
 export interface StockData {

@@ -47,13 +47,24 @@ function buildResults(deals: RawDeal[], searchTerm: string, dongCode: string, at
   }
   return [...grouped.entries()]
     .sort(([a], [b]) => a.localeCompare(b, 'ko'))
-    .map(([molitName, molitDeals]) => ({
-      aptName: molitName,
-      searchTerm,
-      dongCode,
-      units: aggregateByArea(molitDeals),
-      athLoaded,
-    }))
+    .map(([molitName, molitDeals]) => {
+      // 가장 많이 등장하는 건축년도 사용
+      const yearCount = new Map<string, number>()
+      for (const d of molitDeals) {
+        if (d.buildYear) yearCount.set(d.buildYear, (yearCount.get(d.buildYear) ?? 0) + 1)
+      }
+      const buildYear = yearCount.size > 0
+        ? [...yearCount.entries()].sort((a, b) => b[1] - a[1])[0][0]
+        : undefined
+      return {
+        aptName: molitName,
+        searchTerm,
+        dongCode,
+        units: aggregateByArea(molitDeals),
+        athLoaded,
+        buildYear,
+      }
+    })
 }
 
 // results 배열에서 searchTerm+dongCode 그룹 제거
@@ -92,13 +103,31 @@ export function useAptSearch() {
 
       const newPending = buildResults(recentDeals, aptName, dongCode, false)
 
-      setState(prev => ({
-        ...prev,
-        pending: newPending,
-        loading: false,
-        loadingAth: true,
-        error: null,
-      }))
+      // 단지가 하나이면 드랍다운 없이 바로 추가
+      if (newPending.length === 1) {
+        setState(prev => {
+          const item = newPending[0]
+          const exists = prev.results.some(r => r.aptName === item.aptName && r.dongCode === item.dongCode)
+          return {
+            ...prev,
+            pending: [],
+            loading: false,
+            loadingAth: true,
+            error: null,
+            results: exists
+              ? prev.results.map(r => r.aptName === item.aptName && r.dongCode === item.dongCode ? item : r)
+              : [...prev.results, item],
+          }
+        })
+      } else {
+        setState(prev => ({
+          ...prev,
+          pending: newPending,
+          loading: false,
+          loadingAth: true,
+          error: null,
+        }))
+      }
 
       loadAth(dongCode, aptName, recentDeals)
     } catch (e) {

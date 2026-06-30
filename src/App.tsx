@@ -22,7 +22,7 @@ function ManualPage() {
           <strong>검색 예시:</strong><br />
           • <code>래미안</code> — 아파트명에 "래미안" 포함<br />
           • <code>ㄹㅁㅇ</code> — 초성으로 "래미안" 검색<br />
-          • <code>평촌 엘프라우드</code> — 지역명 + 아파트명 조합
+          • <code>강남 래미안</code> — 지역명 + 아파트명 조합
         </div>
         <div className="m-tip">💡 초성 검색을 지원합니다. ㅍㅊ → 평촌, ㄸㅅ → 대성 등</div>
       </div>

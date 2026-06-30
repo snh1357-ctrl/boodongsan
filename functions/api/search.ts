@@ -17,6 +17,7 @@ interface MolitItem {
   dealMonth: string
   dealDay: string
   floor: string
+  buildYear: string
 }
 
 const BASE_URL = 'https://apis.data.go.kr/1613000/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade'
@@ -63,6 +64,7 @@ async function fetchMonthFromMolit(apiKey: string, dongCode: string, ym: string)
           dealMonth:   getXml(x, 'dealMonth'),
           dealDay:     getXml(x, 'dealDay'),
           floor:       getXml(x, 'floor'),
+          buildYear:   getXml(x, 'buildYear'),
         })
       }
       return items
