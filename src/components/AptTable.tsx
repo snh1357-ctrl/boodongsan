@@ -37,11 +37,20 @@ function toPyeong(area: number): number {
   return Math.round(area / 3.305785)
 }
 
+// 전용면적 → 공급면적 추정 (일반적인 아파트 전용률 ~0.84 기준)
+function toSupply(exclusive: number): number {
+  return Math.round(exclusive / 0.84)
+}
+
 function UnitRow({ unit, rowNum }: { unit: AptUnit; rowNum: number }) {
+  const supply = toSupply(unit.area)
   return (
     <tr className="srow">
       <td className="rnum">{rowNum}</td>
-      <td className="cell" style={{ paddingLeft: 48 }}>{unit.area}㎡ <span style={{ color: '#888', fontSize: 10 }}>({toPyeong(unit.area)}평)</span></td>
+      <td className="cell" style={{ paddingLeft: 48 }}>
+        <span>전용 {unit.area}㎡ ({toPyeong(unit.area)}평)</span>
+        <div className="ext-row">공급 약 {supply}㎡ ({toPyeong(supply)}평)</div>
+      </td>
       <td className="cell r">
         <div>{formatPrice(unit.lastDeal.price)}</div>
         <div className="ext-row">{unit.lastDeal.date}</div>

@@ -93,6 +93,7 @@ export default function App() {
       onTabChange={setActiveTab}
       resultCount={results.length}
       onRefresh={handleRefresh}
+      onSearch={(dongCode, aptName) => search({ dongCode, aptName })}
       statusText={
         aptLoading ? '최근 거래 조회중…' :
         loadingAth ? 'ATH 조회중… (역대 최고가 업데이트 중)' :
@@ -108,6 +109,7 @@ export default function App() {
             loading={aptLoading}
             pending={pending}
             loadingAth={loadingAth}
+            hasResults={results.length > 0}
             onAdd={addToTable}
             onAddAll={addAllToTable}
             onClearPending={clearPending}

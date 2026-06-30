@@ -1,5 +1,7 @@
 // src/components/ExcelShell.tsx
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useState, useRef, type ReactNode } from 'react'
+import { useAptIndex, filterApt } from '../hooks/useAptIndex'
+import type { AptEntry } from '../hooks/useAptIndex'
 
 const SHEET_TABS = [
   { id: 'apt', label: '아파트' },
@@ -14,6 +16,7 @@ interface Props {
   statusText?: string
   resultCount?: number
   onRefresh?: () => void
+  onSearch?: (dongCode: string, aptName: string) => void
   stockFilter?: 'all' | 'US' | 'KR'
   onStockFilterChange?: (f: 'all' | 'US' | 'KR') => void
 }
@@ -35,7 +38,40 @@ function toggleAllBlack() {
   if (btn) btn.querySelector('.btn-lbl')!.textContent = on ? ' 컬러' : ' 올블랙'
 }
 
-export function ExcelShell({ activeTab, onTabChange, children, statusText, resultCount = 0, onRefresh, stockFilter, onStockFilterChange }: Props) {
+export function ExcelShell({ activeTab, onTabChange, children, statusText, resultCount = 0, onRefresh, onSearch, stockFilter, onStockFilterChange }: Props) {
+  const { aptIndex } = useAptIndex()
+  const [topQuery, setTopQuery] = useState('')
+  const [topSuggestions, setTopSuggestions] = useState<AptEntry[]>([])
+  const [topActiveIdx, setTopActiveIdx] = useState(-1)
+  const topInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const q = topQuery.trim()
+    if (!q || !onSearch) { setTopSuggestions([]); return }
+    setTopSuggestions(filterApt(aptIndex, q))
+    setTopActiveIdx(-1)
+  }, [topQuery, aptIndex, onSearch])
+
+  const topSelect = (apt: AptEntry) => {
+    setTopQuery('')
+    setTopSuggestions([])
+    setTopActiveIdx(-1)
+    onSearch?.(apt.code, apt.name)
+    topInputRef.current?.blur()
+  }
+
+  const topKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setTopActiveIdx(i => Math.min(i + 1, topSuggestions.length - 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setTopActiveIdx(i => Math.max(i - 1, -1)) }
+    else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (topActiveIdx >= 0 && topSuggestions[topActiveIdx]) topSelect(topSuggestions[topActiveIdx])
+      else if (topSuggestions.length > 0) topSelect(topSuggestions[0])
+    } else if (e.key === 'Escape') {
+      setTopQuery(''); setTopSuggestions([])
+    }
+  }
+
   useEffect(() => {
     if (localStorage.getItem('darkMode')) {
       document.body.classList.add('dark')
@@ -71,23 +107,64 @@ export function ExcelShell({ activeTab, onTabChange, children, statusText, resul
                   <rect x="2.5" y="7.5" width="9" height="4.5" rx="0.5" stroke="rgba(255,255,255,0.9)" strokeWidth="1.1" fill="none"/>
                 </svg>
               </button>
-              <button className="xl-qat-btn dim" title="실행 취소">
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                  <path d="M2 5.5 C2 3 4 1.5 6.5 1.5 C9 1.5 11 3.5 11 6 C11 8.5 9 10.5 6.5 10.5 C5 10.5 3.7 9.8 2.9 8.7" stroke="rgba(255,255,255,0.9)" strokeWidth="1.3" fill="none" strokeLinecap="round"/>
-                  <polyline points="2,2.5 2,5.5 5,5.5" stroke="rgba(255,255,255,0.9)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+              {/* 실행 취소 */}
+              <button className="xl-qat-btn dim" title="실행 취소 (Ctrl+Z)">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M3.5 4.5 A4.5 4.5 0 1 1 3 8" stroke="rgba(255,255,255,0.92)" strokeWidth="1.4" fill="none" strokeLinecap="round"/>
+                  <polyline points="1.5,2 3.5,4.5 6,3" stroke="rgba(255,255,255,0.92)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
                 </svg>
               </button>
-              <button className="xl-qat-btn dim" title="다시 실행">
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                  <path d="M11 5.5 C11 3 9 1.5 6.5 1.5 C4 1.5 2 3.5 2 6 C2 8.5 4 10.5 6.5 10.5 C8 10.5 9.3 9.8 10.1 8.7" stroke="rgba(255,255,255,0.9)" strokeWidth="1.3" fill="none" strokeLinecap="round"/>
-                  <polyline points="11,2.5 11,5.5 8,5.5" stroke="rgba(255,255,255,0.9)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+              {/* 다시 실행 */}
+              <button className="xl-qat-btn dim" title="다시 실행 (Ctrl+Y)">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M10.5 4.5 A4.5 4.5 0 1 0 11 8" stroke="rgba(255,255,255,0.92)" strokeWidth="1.4" fill="none" strokeLinecap="round"/>
+                  <polyline points="12.5,2 10.5,4.5 8,3" stroke="rgba(255,255,255,0.92)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                </svg>
+              </button>
+              {/* QAT 더보기 ▼ */}
+              <button className="xl-qat-btn dim" title="빠른 실행 도구 모음 사용자 지정" style={{ fontSize: 8, padding: '0 1px' }}>
+                <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                  <polyline points="1,2.5 4,5.5 7,2.5" stroke="rgba(255,255,255,0.85)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
                 </svg>
               </button>
             </div>
             <span className="xl-title-text">{activeTab === 'stock' ? 'ATH 트래커.xlsx — 주식' : '아파트 실거래가.xlsx — 부동산'}</span>
-            <div className="xl-search" onClick={() => document.querySelector<HTMLInputElement>('.xl-finput')?.focus()}>
+            <div className="xl-search" style={{ position: 'relative' }}>
               <span className="xl-search-ico">🔍</span>
-              <input className="xl-search-inp" type="text" placeholder="검색 (Alt+Q)" readOnly style={{ cursor: 'pointer' }} />
+              <input
+                ref={topInputRef}
+                className="xl-search-inp"
+                type="text"
+                placeholder="아파트 검색"
+                value={topQuery}
+                onChange={e => setTopQuery(e.target.value)}
+                onKeyDown={topKeyDown}
+                onBlur={() => setTimeout(() => { setTopSuggestions([]); setTopQuery('') }, 150)}
+                autoComplete="off"
+              />
+              {topSuggestions.length > 0 && (
+                <div style={{
+                  position: 'absolute', top: '100%', left: -1, zIndex: 400,
+                  width: 320, background: '#fff', border: '1px solid #ccc',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.18)', marginTop: 2,
+                }}>
+                  {topSuggestions.map((apt, i) => (
+                    <div
+                      key={`${apt.name}|${apt.code}`}
+                      onMouseDown={(e) => { e.preventDefault(); topSelect(apt) }}
+                      style={{
+                        padding: '7px 12px', cursor: 'pointer',
+                        borderBottom: '1px solid #f0f0f0',
+                        background: i === topActiveIdx ? '#e8f5e9' : '#fff',
+                        display: 'flex', justifyContent: 'space-between',
+                      }}
+                    >
+                      <span style={{ fontSize: 12, fontWeight: 500, color: '#212121' }}>{apt.name}</span>
+                      <span style={{ fontSize: 11, color: '#888' }}>{apt.emdNm}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="xl-title-right">
               <div className="xl-avatar" title="계정">부</div>
