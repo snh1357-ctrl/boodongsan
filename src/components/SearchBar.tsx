@@ -130,13 +130,10 @@ export function SearchBar({ bjdong: _bjdong, onSearch, loading, pending, loading
     )
   }
 
-  // 결과 없을 때만 깜빡임 클래스 부여
-  const idleClass = !hasResults && !loading ? ' xl-finput--idle' : ''
-
   return (
     <>
-      {/* 데스크톱: Formula Bar */}
-      <div className="xl-fbar">
+      {/* 데스크톱: Formula Bar — 결과 없을 때 pulse, 검색 후 hl */}
+      <div className={`xl-fbar${!hasResults && !loading ? ' xl-fbar--pulse' : ''}`}>
         <div className="xl-namebox">A1</div>
         <div className="xl-fxlbl" style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '0 6px', borderRight: '1px solid #ddd', flexShrink: 0 }}>
           <button style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#666', padding: '0 2px', fontFamily: 'inherit' }} title="취소">✕</button>
@@ -146,7 +143,7 @@ export function SearchBar({ bjdong: _bjdong, onSearch, loading, pending, loading
         <div style={{ display: 'flex', alignItems: 'center', flex: 1, position: 'relative' }}>
           <input
             ref={inputRef}
-            className={`xl-finput${idleClass}`}
+            className="xl-finput"
             placeholder={placeholder}
             value={query}
             onChange={e => setQuery(e.target.value)}

@@ -108,25 +108,15 @@ export function ExcelShell({ activeTab, onTabChange, children, statusText, resul
                 </svg>
               </button>
               {/* 실행 취소 */}
-              <button className="xl-qat-btn dim" title="실행 취소 (Ctrl+Z)">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                  <path d="M3 9.5 A5.5 5.5 0 1 1 6 13.5" stroke="rgba(255,255,255,0.92)" strokeWidth="1.6" strokeLinecap="round"/>
-                  <path d="M1 7 L3.2 10 L6 8" stroke="rgba(255,255,255,0.92)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
+              <button className="xl-qat-btn" title="실행 취소">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7 C2 4 4.5 2 7.5 2 C10.5 2 12 4 12 6.5 C12 9 10 11 7.5 11" stroke="rgba(255,255,255,0.9)" strokeWidth="1.3" fill="none"/><polyline points="2,4 2,7 5,7" stroke="rgba(255,255,255,0.9)" strokeWidth="1.3" fill="none" strokeLinejoin="round"/></svg>
               </button>
               {/* 다시 실행 */}
-              <button className="xl-qat-btn dim" title="다시 실행 (Ctrl+Y)">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                  <path d="M13 9.5 A5.5 5.5 0 1 0 10 13.5" stroke="rgba(255,255,255,0.45)" strokeWidth="1.6" strokeLinecap="round"/>
-                  <path d="M15 7 L12.8 10 L10 8" stroke="rgba(255,255,255,0.45)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
+              <button className="xl-qat-btn dim" title="다시 실행">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M12 7 C12 4 9.5 2 6.5 2 C3.5 2 2 4 2 6.5 C2 9 4 11 6.5 11" stroke="rgba(255,255,255,0.45)" strokeWidth="1.3" fill="none"/><polyline points="12,4 12,7 9,7" stroke="rgba(255,255,255,0.45)" strokeWidth="1.3" fill="none" strokeLinejoin="round"/></svg>
               </button>
               {/* QAT 더보기 ▼ */}
-              <button className="xl-qat-btn dim" title="빠른 실행 도구 모음 사용자 지정" style={{ padding: '0 2px' }}>
-                <svg width="7" height="6" viewBox="0 0 7 6" fill="none">
-                  <path d="M1 1.5 L3.5 4.5 L6 1.5" stroke="rgba(255,255,255,0.85)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </button>
+              <button className="xl-qat-btn" title="빠른 실행 도구 모음 사용자 지정" style={{ fontSize: '9px', width: '16px' }}>▾</button>
             </div>
             <span className="xl-title-text">{activeTab === 'stock' ? 'ATH 트래커.xlsx — 주식' : '아파트 실거래가.xlsx — 부동산'}</span>
             <div className="xl-search" style={{ position: 'relative' }}>
