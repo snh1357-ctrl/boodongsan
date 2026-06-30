@@ -28,6 +28,33 @@ export interface AptResult {
   units: AptUnit[]      // area 오름차순 정렬
 }
 
+export interface StockData {
+  symbol: string
+  market: 'US' | 'KR'
+  name: string
+  currency: string
+  currentPrice: number
+  prePostPrice?: number
+  prePostLabel?: 'Pre' | 'After'
+  dailyChange: number
+  dailyChangePct: number
+  ath: number
+  athDate: string
+  athDiff: number
+  athDiffPct: number
+  week52High: number
+  week52HighPct: number
+  week52Low: number
+  week52LowPct: number
+}
+
+export interface StockSearchResult {
+  symbol: string
+  name: string
+  type: string
+  exchange: string
+}
+
 export interface BjdongEntry {
   code: string        // 5자리 시군구코드 (API 호출용)
   sidoNm: string      // "서울특별시"

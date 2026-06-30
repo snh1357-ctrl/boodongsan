@@ -5,7 +5,10 @@ import type { BjdongEntry } from './types'
 import { ExcelShell } from './components/ExcelShell'
 import { SearchBar } from './components/SearchBar'
 import { AptTable } from './components/AptTable'
+import { StockSearchBar } from './components/StockSearchBar'
+import { StockTable } from './components/StockTable'
 import { useAptSearch } from './hooks/useAptSearch'
+import { useStockTracker } from './hooks/useStockTracker'
 
 const bjdong = bjdongData as BjdongEntry[]
 
@@ -83,26 +86,42 @@ function RequestPage() {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('apt')
-  const { results, loading, error, search, removeResult } = useAptSearch()
+  const [stockFilter, setStockFilter] = useState<'all' | 'US' | 'KR'>('all')
+  const { results, loading: aptLoading, error, search, removeResult } = useAptSearch()
+  const { stocks, loading: stockLoading, fetchStock, removeStock, refreshAll } = useStockTracker()
 
-  const handleRefresh = () => window.location.reload()
+  const handleRefresh = () => {
+    if (activeTab === 'stock') refreshAll()
+    else window.location.reload()
+  }
+
+  const isStockLoading = stockLoading.size > 0
 
   return (
     <ExcelShell
       activeTab={activeTab}
       onTabChange={setActiveTab}
-      resultCount={results.length}
+      resultCount={activeTab === 'stock' ? stocks.length : results.length}
       onRefresh={handleRefresh}
+      stockFilter={activeTab === 'stock' ? stockFilter : undefined}
+      onStockFilterChange={setStockFilter}
       statusText={
-        loading ? '데이터 조회중… (전체 기간 최초 조회는 20~40초 소요)' :
-        error ? `오류: ${error}` :
-        undefined
+        activeTab === 'stock'
+          ? (isStockLoading ? '주식 데이터 조회중…' : undefined)
+          : (aptLoading ? '데이터 조회중… (전체 기간 최초 조회는 20~40초 소요)' :
+             error ? `오류: ${error}` : undefined)
       }
     >
       {activeTab === 'apt' && (
         <>
-          <SearchBar bjdong={bjdong} onSearch={(dongCode, aptName) => search({ dongCode, aptName })} loading={loading} />
+          <SearchBar bjdong={bjdong} onSearch={(dongCode, aptName) => search({ dongCode, aptName })} loading={aptLoading} />
           <AptTable results={results} onRemove={removeResult} />
+        </>
+      )}
+      {activeTab === 'stock' && (
+        <>
+          <StockSearchBar onAdd={fetchStock} loading={isStockLoading} />
+          <StockTable stocks={stocks} loading={stockLoading} filter={stockFilter} onRemove={removeStock} />
         </>
       )}
       {activeTab === 'manual' && <ManualPage />}

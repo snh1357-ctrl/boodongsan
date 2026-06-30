@@ -3,6 +3,7 @@ import { useEffect, type ReactNode } from 'react'
 
 const SHEET_TABS = [
   { id: 'apt', label: '아파트' },
+  { id: 'stock', label: 'ATH 트래커' },
   { id: 'manual', label: '메뉴얼' },
   { id: 'request', label: '요청' },
 ]
@@ -14,6 +15,8 @@ interface Props {
   statusText?: string
   resultCount?: number
   onRefresh?: () => void
+  stockFilter?: 'all' | 'US' | 'KR'
+  onStockFilterChange?: (f: 'all' | 'US' | 'KR') => void
 }
 
 function toggleDarkMode() {
@@ -33,7 +36,7 @@ function toggleAllBlack() {
   if (btn) btn.querySelector('.btn-lbl')!.textContent = on ? ' 컬러' : ' 올블랙'
 }
 
-export function ExcelShell({ activeTab, onTabChange, children, statusText, resultCount = 0, onRefresh }: Props) {
+export function ExcelShell({ activeTab, onTabChange, children, statusText, resultCount = 0, onRefresh, stockFilter, onStockFilterChange }: Props) {
   useEffect(() => {
     if (localStorage.getItem('darkMode')) {
       document.body.classList.add('dark')
@@ -72,7 +75,7 @@ export function ExcelShell({ activeTab, onTabChange, children, statusText, resul
               <button className="xl-qat-btn dim">↩</button>
               <button className="xl-qat-btn dim">↪</button>
             </div>
-            <span className="xl-title-text">아파트 실거래가.xlsx — 부동산</span>
+            <span className="xl-title-text">{activeTab === 'stock' ? 'ATH 트래커.xlsx — 주식' : '아파트 실거래가.xlsx — 부동산'}</span>
             <div className="xl-search">
               <span className="xl-search-ico">🔍</span>
               <input className="xl-search-inp" type="text" placeholder="검색 (Alt+Q)" readOnly />
@@ -294,19 +297,35 @@ export function ExcelShell({ activeTab, onTabChange, children, statusText, resul
               <div className="rg-lbl">Data</div>
             </div>
 
-            {/* 필터 — ALL/수도/지방 */}
+            {/* 필터 — 탭에 따라 다르게 */}
             <div className="rg">
               <div className="rg-top" style={{alignItems:'center',gap:3}}>
                 <div style={{display:'flex',flexDirection:'column',gap:2,height:68,justifyContent:'center'}}>
-                  <button className="rb rb-active" style={{fontSize:10,padding:'2px 10px',height:20,gap:4}}>
-                    <span className="mkt-badge all">ALL</span><span>전체</span>
-                  </button>
-                  <button className="rb" style={{fontSize:10,padding:'2px 10px',height:20,gap:4}}>
-                    <span className="mkt-badge us">수도</span><span>수도권</span>
-                  </button>
-                  <button className="rb" style={{fontSize:10,padding:'2px 10px',height:20,gap:4}}>
-                    <span className="mkt-badge kr">지방</span><span>지방</span>
-                  </button>
+                  {activeTab === 'stock' && onStockFilterChange ? (
+                    <>
+                      <button className={`rb${stockFilter === 'all' ? ' rb-active' : ''}`} style={{fontSize:10,padding:'2px 10px',height:20,gap:4}} onClick={() => onStockFilterChange('all')}>
+                        <span className="mkt-badge all">ALL</span><span>전체</span>
+                      </button>
+                      <button className={`rb${stockFilter === 'US' ? ' rb-active' : ''}`} style={{fontSize:10,padding:'2px 10px',height:20,gap:4}} onClick={() => onStockFilterChange('US')}>
+                        <span className="mkt-badge us">US</span><span>미국</span>
+                      </button>
+                      <button className={`rb${stockFilter === 'KR' ? ' rb-active' : ''}`} style={{fontSize:10,padding:'2px 10px',height:20,gap:4}} onClick={() => onStockFilterChange('KR')}>
+                        <span className="mkt-badge kr">KR</span><span>한국</span>
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button className="rb rb-active" style={{fontSize:10,padding:'2px 10px',height:20,gap:4}}>
+                        <span className="mkt-badge all">ALL</span><span>전체</span>
+                      </button>
+                      <button className="rb" style={{fontSize:10,padding:'2px 10px',height:20,gap:4}}>
+                        <span className="mkt-badge us">수도</span><span>수도권</span>
+                      </button>
+                      <button className="rb" style={{fontSize:10,padding:'2px 10px',height:20,gap:4}}>
+                        <span className="mkt-badge kr">지방</span><span>지방</span>
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
               <div className="rg-lbl">필터</div>
@@ -333,7 +352,7 @@ export function ExcelShell({ activeTab, onTabChange, children, statusText, resul
       <div className="xl-status">
         <span>{statusText ?? '준비'}</span>
         <div className="sr">
-          {resultCount > 0 && <span>{resultCount}개 단지 조회됨</span>}
+          {resultCount > 0 && <span>{activeTab === 'stock' ? `${resultCount} stocks` : `${resultCount}개 단지 조회됨`}</span>}
         </div>
       </div>
     </div>
