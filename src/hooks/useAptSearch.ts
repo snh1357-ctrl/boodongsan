@@ -145,5 +145,13 @@ export function useAptSearch() {
     }))
   }, [])
 
-  return { ...state, search, removeResult }
+  // 검색 그룹 전체 삭제 (searchTerm 기준)
+  const removeGroup = useCallback((searchTerm: string, dongCode: string) => {
+    setState(prev => ({
+      ...prev,
+      results: removeBySearch(prev.results, searchTerm, dongCode),
+    }))
+  }, [])
+
+  return { ...state, search, removeResult, removeGroup }
 }

@@ -83,7 +83,7 @@ function RequestPage() {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('apt')
-  const { results, loading: aptLoading, loadingAth, error, search, removeResult } = useAptSearch()
+  const { results, loading: aptLoading, loadingAth, error, search, removeResult, removeGroup } = useAptSearch()
 
   const handleRefresh = () => window.location.reload()
 
@@ -103,7 +103,7 @@ export default function App() {
       {activeTab === 'apt' && (
         <>
           <SearchBar bjdong={bjdong} onSearch={(dongCode, aptName) => search({ dongCode, aptName })} loading={aptLoading} />
-          <AptTable results={results} onRemove={removeResult} />
+          <AptTable results={results} onRemove={removeResult} onRemoveGroup={removeGroup} />
         </>
       )}
       {activeTab === 'manual' && <ManualPage />}
