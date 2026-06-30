@@ -1,3 +1,13 @@
 name = "boodongsan"
 compatibility_date = "2024-09-23"
 pages_build_output_dir = "dist"
+
+# APT_CACHE KV 네임스페이스
+# 발급 방법:
+#   npx wrangler kv namespace create APT_CACHE
+# 또는 Cloudflare 대시보드 → Workers & Pages → KV → Create namespace
+# 발급된 id를 아래에 붙여넣기
+
+[[kv_namespaces]]
+binding = "APT_CACHE"
+id = "YOUR_KV_NAMESPACE_ID"
