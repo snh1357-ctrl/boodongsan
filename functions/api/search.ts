@@ -142,12 +142,20 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
      .toLowerCase()
 
   const normTarget = normalize(aptName)
+
+  // MOLIT 이름에서 뒤쪽 차수/단지 번호 제거한 기본명
+  // 예: "현대1차" → "현대", "신현대2단지" → "신현대"
+  const stripSuffix = (s: string) => s.replace(/\d+[차단지동블럭호]?$/, '').replace(/\d+$/, '')
+
   const aptDeals = allDeals.filter(d => {
     const n = normalize(d.aptNm ?? '')
     if (!n) return false
     if (n === normTarget) return true
-    if (n.includes(normTarget)) return true           // MOLIT이 "1단지" 등 접미사 추가
-    if (n.length >= 5 && normTarget.startsWith(n)) return true  // MOLIT이 약칭 사용
+    if (n.includes(normTarget)) return true           // MOLIT이 뒤에 접미사 추가 (예: "1단지")
+    if (n.length >= 3 && normTarget.includes(n)) return true   // MOLIT이 지역명 없이 저장 (예: "신현대")
+    // 차수 번호 제거 후 지역명 접두사 없이 저장된 경우 (예: "현대1차" → "현대", "압구정현대".endsWith("현대"))
+    const nBase = stripSuffix(n)
+    if (nBase.length >= 2 && normTarget.endsWith(nBase)) return true
     return false
   })
 
