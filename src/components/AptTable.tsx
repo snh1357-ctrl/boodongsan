@@ -134,6 +134,7 @@ export function AptTable({ results, onRemove }: Props) {
             <td className="cell r" style={{ position: 'sticky', top: 20, zIndex: 9 }}>3개월 평균</td>
             <td className="cell r" style={{ position: 'sticky', top: 20, zIndex: 9 }}>역대 최고가</td>
             <td className="cell r" style={{ position: 'sticky', top: 20, zIndex: 9 }}>최고가 대비</td>
+            {/* * = ATH 전체 기간 로딩 중일 수 있음 */}
             <td className="cell r" style={{ position: 'sticky', top: 20, zIndex: 9 }}>3개월 건수</td>
             <td className="cell" style={{ position: 'sticky', top: 20, zIndex: 9 }} />
           </tr>

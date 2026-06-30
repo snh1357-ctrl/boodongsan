@@ -26,6 +26,7 @@ export interface AptResult {
   aptName: string
   dongCode: string
   units: AptUnit[]      // area 오름차순 정렬
+  athLoaded?: boolean   // ATH 전체 기간 조회 완료 여부
 }
 
 export interface StockData {

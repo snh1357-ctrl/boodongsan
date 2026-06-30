@@ -87,7 +87,7 @@ function RequestPage() {
 export default function App() {
   const [activeTab, setActiveTab] = useState('apt')
   const [stockFilter, setStockFilter] = useState<'all' | 'US' | 'KR'>('all')
-  const { results, loading: aptLoading, error, search, removeResult } = useAptSearch()
+  const { results, loading: aptLoading, loadingAth, error, search, removeResult } = useAptSearch()
   const { stocks, loading: stockLoading, fetchStock, removeStock, refreshAll } = useStockTracker()
 
   const handleRefresh = () => {
@@ -108,7 +108,8 @@ export default function App() {
       statusText={
         activeTab === 'stock'
           ? (isStockLoading ? '주식 데이터 조회중…' : undefined)
-          : (aptLoading ? '데이터 조회중… (전체 기간 최초 조회는 20~40초 소요)' :
+          : (aptLoading ? '최근 거래 조회중…' :
+             loadingAth ? 'ATH 조회중… (역대 최고가 업데이트 중)' :
              error ? `오류: ${error}` : undefined)
       }
     >

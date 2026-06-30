@@ -90,12 +90,22 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   const results = await Promise.all(months.map(ym => fetchMonth(context.env.MOLIT_API_KEY, dongCode, ym)))
   const allDeals = results.flat()
 
-  // MOLIT API는 "아파트" 접미사 없이 저장하는 경우 많음 → 양쪽 제거 후 비교 + 부분 매칭 폴백
+  // 이름 정규화: 공백·"아파트" 접미사 제거, 소문자
   const normalize = (s: string) => s.replace(/\s/g, '').replace(/아파트$/, '').toLowerCase()
   const normTarget = normalize(aptName)
+
+  // 매칭 규칙 (엄격한 순서로):
+  // 1. 정확히 일치
+  // 2. MOLIT 이름이 검색어를 포함 (MOLIT이 "1단지" 등 접미사 추가)
+  // 3. MOLIT 이름이 검색어의 prefix이고 5자 이상 (MOLIT이 약칭 사용)
+  // → normTarget.includes(n) 는 제거 (너무 느슨해서 다른 단지 거래가 섞임)
   const aptDeals = allDeals.filter(d => {
     const n = normalize(d.aptNm ?? '')
-    return n === normTarget || n.includes(normTarget) || normTarget.includes(n)
+    if (!n) return false
+    if (n === normTarget) return true
+    if (n.includes(normTarget)) return true
+    if (n.length >= 5 && normTarget.startsWith(n)) return true
+    return false
   })
 
   const foundNames = [...new Set(allDeals.map(d => d.aptNm).filter(Boolean))].slice(0, 30)
