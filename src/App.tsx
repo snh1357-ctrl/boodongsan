@@ -5,10 +5,7 @@ import type { BjdongEntry } from './types'
 import { ExcelShell } from './components/ExcelShell'
 import { SearchBar } from './components/SearchBar'
 import { AptTable } from './components/AptTable'
-import { StockSearchBar } from './components/StockSearchBar'
-import { StockTable } from './components/StockTable'
 import { useAptSearch } from './hooks/useAptSearch'
-import { useStockTracker } from './hooks/useStockTracker'
 
 const bjdong = bjdongData as BjdongEntry[]
 
@@ -67,7 +64,7 @@ function RequestPage() {
       <div className="manual-section">
         <h2>🐛 알려진 문제</h2>
         <ul>
-          <li>최초 조회 시 전체 기간 데이터를 로딩하므로 20~40초 소요될 수 있습니다.</li>
+          <li>최초 조회 시 데이터 로딩에 시간이 소요될 수 있습니다.</li>
           <li>일부 소규모 단지는 데이터가 없을 수 있습니다.</li>
         </ul>
       </div>
@@ -86,43 +83,27 @@ function RequestPage() {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('apt')
-  const [stockFilter, setStockFilter] = useState<'all' | 'US' | 'KR'>('all')
   const { results, loading: aptLoading, loadingAth, error, search, removeResult } = useAptSearch()
-  const { stocks, loading: stockLoading, fetchStock, removeStock, refreshAll } = useStockTracker()
 
-  const handleRefresh = () => {
-    if (activeTab === 'stock') refreshAll()
-    else window.location.reload()
-  }
-
-  const isStockLoading = stockLoading.size > 0
+  const handleRefresh = () => window.location.reload()
 
   return (
     <ExcelShell
       activeTab={activeTab}
       onTabChange={setActiveTab}
-      resultCount={activeTab === 'stock' ? stocks.length : results.length}
+      resultCount={results.length}
       onRefresh={handleRefresh}
-      stockFilter={activeTab === 'stock' ? stockFilter : undefined}
-      onStockFilterChange={setStockFilter}
       statusText={
-        activeTab === 'stock'
-          ? (isStockLoading ? '주식 데이터 조회중…' : undefined)
-          : (aptLoading ? '최근 거래 조회중…' :
-             loadingAth ? 'ATH 조회중… (역대 최고가 업데이트 중)' :
-             error ? `오류: ${error}` : undefined)
+        aptLoading ? '최근 거래 조회중…' :
+        loadingAth ? 'ATH 조회중… (역대 최고가 업데이트 중)' :
+        error ? `오류: ${error}` :
+        undefined
       }
     >
       {activeTab === 'apt' && (
         <>
           <SearchBar bjdong={bjdong} onSearch={(dongCode, aptName) => search({ dongCode, aptName })} loading={aptLoading} />
           <AptTable results={results} onRemove={removeResult} />
-        </>
-      )}
-      {activeTab === 'stock' && (
-        <>
-          <StockSearchBar onAdd={fetchStock} loading={isStockLoading} />
-          <StockTable stocks={stocks} loading={stockLoading} filter={stockFilter} onRemove={removeStock} />
         </>
       )}
       {activeTab === 'manual' && <ManualPage />}

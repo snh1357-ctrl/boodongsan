@@ -133,15 +133,21 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   )
   const allDeals = results.flat()
 
-  // 이름 매칭 (엄격)
-  const normalize = (s: string) => s.replace(/\s/g, '').replace(/아파트$/, '').toLowerCase()
+  // 이름 정규화: 공백·"아파트" 접미사·괄호 반복 표기 제거
+  // MOLIT은 "래미안퍼스티지(래미안퍼스티지)" 같은 형식 사용
+  const normalize = (s: string) =>
+    s.replace(/\s/g, '')
+     .replace(/\([^)]*\)/g, '')   // (괄호 내용) 제거
+     .replace(/아파트$/, '')
+     .toLowerCase()
+
   const normTarget = normalize(aptName)
   const aptDeals = allDeals.filter(d => {
     const n = normalize(d.aptNm ?? '')
     if (!n) return false
     if (n === normTarget) return true
-    if (n.includes(normTarget)) return true
-    if (n.length >= 5 && normTarget.startsWith(n)) return true
+    if (n.includes(normTarget)) return true           // MOLIT이 "1단지" 등 접미사 추가
+    if (n.length >= 5 && normTarget.startsWith(n)) return true  // MOLIT이 약칭 사용
     return false
   })
 

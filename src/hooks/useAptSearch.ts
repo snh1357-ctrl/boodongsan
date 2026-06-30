@@ -6,20 +6,16 @@ import { aggregateByArea } from '../lib/aggregate'
 interface SearchParams { dongCode: string; aptName: string }
 interface SearchState  { results: AptResult[]; loading: boolean; loadingAth: boolean; error: string | null }
 
-// Phase 1 (빠른 조회): 최근 2년 → 현재가·3개월 평균 즉시 표시
-// Phase 2 (ATH 조회): 2012~2년전 → 역대 최고가 업데이트 (백그라운드)
-const RECENT_YEARS = 2
+const currentYear = new Date().getFullYear()
 const ATH_START_YEAR = 2012
 
-const currentYear = new Date().getFullYear()
-
-// Phase 2: 2012 ~ (현재-2년)을 3년 청크로 분할, 각 Worker 서브요청 ≤ 45개
+// ATH 조회용 청크 (2012 ~ 작년)
 function athChunks(): [number, number][] {
-  const endYear = currentYear - RECENT_YEARS
+  const endYear = currentYear - 1
   if (ATH_START_YEAR > endYear) return []
   const chunks: [number, number][] = []
-  for (let y = ATH_START_YEAR; y <= endYear; y += 3) {
-    chunks.push([y, Math.min(y + 2, endYear)])
+  for (let y = ATH_START_YEAR; y <= endYear; y += 4) {
+    chunks.push([y, Math.min(y + 3, endYear)])
   }
   return chunks
 }
@@ -52,35 +48,43 @@ export function useAptSearch() {
     setState(prev => ({ ...prev, loading: true, loadingAth: false, error: null }))
 
     try {
-      // Phase 1: 최근 2년 (빠름, ~24개월)
-      const recentDeals = await fetchChunk(dongCode, aptName, currentYear - RECENT_YEARS + 1, currentYear)
-      if (recentDeals.length === 0) {
-        // 최근 데이터 없으면 좀 더 넓게 시도
-        const extendedDeals = await fetchChunk(dongCode, aptName, currentYear - 5, currentYear)
-        const units = aggregateByArea(extendedDeals)
-        const result: AptResult = { aptName, dongCode, units, athLoaded: false }
+      // Phase 1: 최근 12개월 (KV 캐시 히트 시 ~100ms, 미스 시 12 MOLIT 호출)
+      const recentDeals = await fetchChunk(dongCode, aptName, currentYear - 1, currentYear)
+
+      if (recentDeals.length > 0) {
+        // 즉시 표시
+        const units = aggregateByArea(recentDeals)
         setState(prev => ({
-          results: [result, ...prev.results.filter(r => !(r.aptName === aptName && r.dongCode === dongCode))],
+          results: [
+            { aptName, dongCode, units, athLoaded: false },
+            ...prev.results.filter(r => !(r.aptName === aptName && r.dongCode === dongCode)),
+          ],
           loading: false,
           loadingAth: true,
           error: null,
         }))
-        // Phase 2
-        loadAth(dongCode, aptName, extendedDeals)
+        loadAth(dongCode, aptName, recentDeals)
         return
       }
 
-      const units = aggregateByArea(recentDeals)
-      const result: AptResult = { aptName, dongCode, units, athLoaded: false }
+      // Phase 1 fallback: 최근 5년으로 확장 (거래 뜸한 단지 대응)
+      // 최근 1년과 그 이전 4년을 병렬로 가져옴
+      const [extRecent, extOld] = await Promise.all([
+        fetchChunk(dongCode, aptName, currentYear - 5, currentYear - 2),
+        fetchChunk(dongCode, aptName, currentYear - 1, currentYear),
+      ])
+      const extDeals = [...extRecent, ...extOld]
+      const units = aggregateByArea(extDeals)
       setState(prev => ({
-        results: [result, ...prev.results.filter(r => !(r.aptName === aptName && r.dongCode === dongCode))],
+        results: [
+          { aptName, dongCode, units, athLoaded: false },
+          ...prev.results.filter(r => !(r.aptName === aptName && r.dongCode === dongCode)),
+        ],
         loading: false,
         loadingAth: true,
         error: null,
       }))
-
-      // Phase 2: ATH 조회 (백그라운드)
-      loadAth(dongCode, aptName, recentDeals)
+      loadAth(dongCode, aptName, extDeals)
     } catch (e) {
       setState(prev => ({
         ...prev,
@@ -98,9 +102,7 @@ export function useAptSearch() {
         ...prev,
         loadingAth: false,
         results: prev.results.map(r =>
-          r.aptName === aptName && r.dongCode === dongCode
-            ? { ...r, athLoaded: true }
-            : r
+          r.aptName === aptName && r.dongCode === dongCode ? { ...r, athLoaded: true } : r
         ),
       }))
       return
@@ -120,9 +122,7 @@ export function useAptSearch() {
           ),
         }))
       })
-      .catch(() => {
-        setState(prev => ({ ...prev, loadingAth: false }))
-      })
+      .catch(() => setState(prev => ({ ...prev, loadingAth: false })))
   }
 
   const removeResult = useCallback((aptName: string, dongCode: string) => {

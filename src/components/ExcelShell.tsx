@@ -3,7 +3,6 @@ import { useEffect, type ReactNode } from 'react'
 
 const SHEET_TABS = [
   { id: 'apt', label: '아파트' },
-  { id: 'stock', label: 'ATH 트래커' },
   { id: 'manual', label: '메뉴얼' },
   { id: 'request', label: '요청' },
 ]
