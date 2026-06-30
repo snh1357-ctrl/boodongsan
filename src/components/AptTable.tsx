@@ -88,7 +88,12 @@ function AptRow({
       <td className="cell tick co-cell" style={{ paddingLeft: 24 }}>
         <span style={{ marginRight: 4 }}>{expanded ? '▾' : '▸'}</span>
         {result.aptName}
-        {result.buildYear && <div className="ext-row">{result.buildYear}년 준공</div>}
+        <div className="ext-row">
+          {result.buildYear ? `${result.buildYear}년 준공` : ''}
+          {result.buildYear && result.houseHoldCnt ? ' · ' : ''}
+          {result.houseHoldCnt ? `${result.houseHoldCnt.toLocaleString()}세대` : ''}
+          {!result.buildYear && !result.houseHoldCnt ? '' : ''}
+        </div>
       </td>
       {summary ? (
         <>
@@ -133,6 +138,7 @@ function GroupRow({
         <span style={{ marginRight: 4 }}>{expanded ? '▾' : '▸'}</span>
         {searchTerm}
         <div className="ext-row">{count}개 단지{athLoaded ? '' : ' · ATH 로딩중…'}</div>
+
       </td>
       <td className="cell" colSpan={5} />
       <td className="cell">

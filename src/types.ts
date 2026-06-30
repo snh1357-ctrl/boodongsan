@@ -28,8 +28,9 @@ export interface AptResult {
   searchTerm: string    // 사용자 검색어 (재검색/삭제 그룹 키)
   dongCode: string
   units: AptUnit[]      // area 오름차순 정렬
-  athLoaded?: boolean   // ATH 전체 기간 조회 완료 여부
-  buildYear?: string    // 건축년도
+  athLoaded?: boolean      // ATH 전체 기간 조회 완료 여부
+  buildYear?: string       // 건축년도
+  houseHoldCnt?: number    // 총 세대수 (AptListService2)
 }
 
 export interface StockData {

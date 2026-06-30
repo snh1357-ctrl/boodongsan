@@ -3,6 +3,18 @@ import { useState, useCallback, useEffect } from 'react'
 import type { AptResult, RawDeal } from '../types'
 import { aggregateByArea } from '../lib/aggregate'
 
+async function fetchHouseHoldCnt(aptName: string, dongCode: string): Promise<number | null> {
+  try {
+    const url = `/api/apt-info?aptName=${encodeURIComponent(aptName)}&dongCode=${encodeURIComponent(dongCode)}`
+    const res = await fetch(url)
+    if (!res.ok) return null
+    const data = await res.json() as { found: boolean; houseHoldCnt?: number }
+    return data.found ? (data.houseHoldCnt ?? null) : null
+  } catch {
+    return null
+  }
+}
+
 interface SearchParams { dongCode: string; aptName: string }
 interface SearchState {
   results: AptResult[]       // 테이블에 고정된 항목
@@ -85,6 +97,19 @@ export function useAptSearch() {
     try { localStorage.setItem('apt_results', JSON.stringify(state.results)) } catch {}
   }, [state.results])
 
+  // 세대수 조회 후 results에 반영
+  const loadHouseHoldCnt = useCallback((aptName: string, dongCode: string) => {
+    fetchHouseHoldCnt(aptName, dongCode).then(cnt => {
+      if (cnt === null) return
+      setState(prev => ({
+        ...prev,
+        results: prev.results.map(r =>
+          r.aptName === aptName && r.dongCode === dongCode ? { ...r, houseHoldCnt: cnt } : r
+        ),
+      }))
+    })
+  }, [])
+
   const search = useCallback(async ({ dongCode, aptName }: SearchParams) => {
     setState(prev => ({ ...prev, loading: true, loadingAth: false, error: null, pending: [] }))
 
@@ -105,8 +130,8 @@ export function useAptSearch() {
 
       // 단지가 하나이면 드랍다운 없이 바로 추가
       if (newPending.length === 1) {
+        const item = newPending[0]
         setState(prev => {
-          const item = newPending[0]
           const exists = prev.results.some(r => r.aptName === item.aptName && r.dongCode === item.dongCode)
           return {
             ...prev,
@@ -119,6 +144,7 @@ export function useAptSearch() {
               : [...prev.results, item],
           }
         })
+        loadHouseHoldCnt(item.aptName, item.dongCode)
       } else {
         setState(prev => ({
           ...prev,
@@ -138,7 +164,7 @@ export function useAptSearch() {
         error: e instanceof Error ? e.message : '조회 실패',
       }))
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loadHouseHoldCnt]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function loadAth(dongCode: string, aptName: string, recentDeals: RawDeal[]) {
     const chunks = athChunks()
@@ -189,21 +215,23 @@ export function useAptSearch() {
       return {
         ...prev,
         pending: prev.pending.filter(r => !(r.aptName === aptName && r.dongCode === dongCode)),
-        // 같은 항목이 이미 테이블에 있으면 업데이트, 없으면 추가
         results: prev.results.some(r => r.aptName === aptName && r.dongCode === dongCode)
           ? prev.results.map(r => r.aptName === aptName && r.dongCode === dongCode ? item : r)
           : [...prev.results, item],
       }
     })
-  }, [])
+    loadHouseHoldCnt(aptName, dongCode)
+  }, [loadHouseHoldCnt])
 
   // 드랍다운에서 전체 테이블 추가
   const addAllToTable = useCallback(() => {
+    let toFetch: { aptName: string; dongCode: string }[] = []
     setState(prev => {
       if (prev.pending.length === 0) return prev
       const existingKeys = new Set(prev.results.map(r => `${r.aptName}__${r.dongCode}`))
       const toAdd = prev.pending.filter(r => !existingKeys.has(`${r.aptName}__${r.dongCode}`))
       const toUpdate = prev.pending.filter(r => existingKeys.has(`${r.aptName}__${r.dongCode}`))
+      toFetch = prev.pending.map(r => ({ aptName: r.aptName, dongCode: r.dongCode }))
       return {
         ...prev,
         pending: [],
@@ -213,7 +241,8 @@ export function useAptSearch() {
         ],
       }
     })
-  }, [])
+    toFetch.forEach(({ aptName, dongCode }) => loadHouseHoldCnt(aptName, dongCode))
+  }, [loadHouseHoldCnt])
 
   // 드랍다운 닫기
   const clearPending = useCallback(() => {
