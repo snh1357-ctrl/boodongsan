@@ -1,5 +1,5 @@
 // src/components/AptTable.tsx
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import type { AptResult, AptUnit } from '../types'
 
 interface Props {
@@ -163,6 +163,19 @@ export function AptTable({ results, onRemove, onRemoveGroup }: Props) {
     }
     groups[seen.get(gk)!].items.push(r)
   }
+
+  // 단지가 1개인 그룹: 차수 행 자동 펼침
+  useEffect(() => {
+    setExpandedApts(prev => {
+      const next = new Set(prev)
+      for (const g of groups) {
+        if (g.items.length === 1) {
+          next.add(`${g.items[0].dongCode}-${g.items[0].aptName}`)
+        }
+      }
+      return next
+    })
+  }, [results]) // eslint-disable-line react-hooks/exhaustive-deps
 
   let globalRow = 1
 
