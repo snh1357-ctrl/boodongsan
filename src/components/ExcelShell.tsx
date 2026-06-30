@@ -109,22 +109,22 @@ export function ExcelShell({ activeTab, onTabChange, children, statusText, resul
               </button>
               {/* 실행 취소 */}
               <button className="xl-qat-btn dim" title="실행 취소 (Ctrl+Z)">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M3.5 4.5 A4.5 4.5 0 1 1 3 8" stroke="rgba(255,255,255,0.92)" strokeWidth="1.4" fill="none" strokeLinecap="round"/>
-                  <polyline points="1.5,2 3.5,4.5 6,3" stroke="rgba(255,255,255,0.92)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 9.5 A5.5 5.5 0 1 1 6 13.5" stroke="rgba(255,255,255,0.92)" strokeWidth="1.6" strokeLinecap="round"/>
+                  <path d="M1 7 L3.2 10 L6 8" stroke="rgba(255,255,255,0.92)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </button>
               {/* 다시 실행 */}
               <button className="xl-qat-btn dim" title="다시 실행 (Ctrl+Y)">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M10.5 4.5 A4.5 4.5 0 1 0 11 8" stroke="rgba(255,255,255,0.92)" strokeWidth="1.4" fill="none" strokeLinecap="round"/>
-                  <polyline points="12.5,2 10.5,4.5 8,3" stroke="rgba(255,255,255,0.92)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <path d="M13 9.5 A5.5 5.5 0 1 0 10 13.5" stroke="rgba(255,255,255,0.45)" strokeWidth="1.6" strokeLinecap="round"/>
+                  <path d="M15 7 L12.8 10 L10 8" stroke="rgba(255,255,255,0.45)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </button>
               {/* QAT 더보기 ▼ */}
-              <button className="xl-qat-btn dim" title="빠른 실행 도구 모음 사용자 지정" style={{ fontSize: 8, padding: '0 1px' }}>
-                <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
-                  <polyline points="1,2.5 4,5.5 7,2.5" stroke="rgba(255,255,255,0.85)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+              <button className="xl-qat-btn dim" title="빠른 실행 도구 모음 사용자 지정" style={{ padding: '0 2px' }}>
+                <svg width="7" height="6" viewBox="0 0 7 6" fill="none">
+                  <path d="M1 1.5 L3.5 4.5 L6 1.5" stroke="rgba(255,255,255,0.85)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </button>
             </div>
