@@ -23,7 +23,8 @@ export interface AptUnit {
 }
 
 export interface AptResult {
-  aptName: string
+  aptName: string       // MOLIT 실제 저장 이름 (표시용)
+  searchTerm: string    // 사용자 검색어 (재검색/삭제 그룹 키)
   dongCode: string
   units: AptUnit[]      // area 오름차순 정렬
   athLoaded?: boolean   // ATH 전체 기간 조회 완료 여부

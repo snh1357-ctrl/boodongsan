@@ -9,7 +9,6 @@ interface SearchState  { results: AptResult[]; loading: boolean; loadingAth: boo
 const currentYear = new Date().getFullYear()
 const ATH_START_YEAR = 2012
 
-// ATH 조회용 청크 (2012 ~ 작년)
 function athChunks(): [number, number][] {
   const endYear = currentYear - 1
   if (ATH_START_YEAR > endYear) return []
@@ -32,6 +31,32 @@ async function fetchChunk(dongCode: string, aptName: string, fromYear: number, t
   return data.deals ?? []
 }
 
+// 동일 검색어로 조회된 기존 결과 모두 제거
+function removeBySearch(results: AptResult[], searchTerm: string, dongCode: string) {
+  return results.filter(r => !(r.searchTerm === searchTerm && r.dongCode === dongCode))
+}
+
+// 거래 데이터를 MOLIT aptNm 별로 그룹화 → 각각 AptResult 생성
+function buildResults(deals: RawDeal[], searchTerm: string, dongCode: string, athLoaded: boolean): AptResult[] {
+  const grouped = new Map<string, RawDeal[]>()
+  for (const d of deals) {
+    const name = (d.aptNm ?? '').trim()
+    if (!name) continue
+    if (!grouped.has(name)) grouped.set(name, [])
+    grouped.get(name)!.push(d)
+  }
+  // 이름 오름차순 정렬 (차수 순서: 현대1차, 현대2차, ...)
+  return [...grouped.entries()]
+    .sort(([a], [b]) => a.localeCompare(b, 'ko'))
+    .map(([molitName, molitDeals]) => ({
+      aptName: molitName,
+      searchTerm,
+      dongCode,
+      units: aggregateByArea(molitDeals),
+      athLoaded,
+    }))
+}
+
 export function useAptSearch() {
   const [state, setState] = useState<SearchState>(() => ({
     results: loadSavedResults(),
@@ -48,43 +73,31 @@ export function useAptSearch() {
     setState(prev => ({ ...prev, loading: true, loadingAth: false, error: null }))
 
     try {
-      // Phase 1: 최근 12개월 (KV 캐시 히트 시 ~100ms, 미스 시 12 MOLIT 호출)
-      const recentDeals = await fetchChunk(dongCode, aptName, currentYear - 1, currentYear)
+      // Phase 1: 최근 12개월
+      let recentDeals = await fetchChunk(dongCode, aptName, currentYear - 1, currentYear)
 
-      if (recentDeals.length > 0) {
-        // 즉시 표시
-        const units = aggregateByArea(recentDeals)
-        setState(prev => ({
-          results: [
-            { aptName, dongCode, units, athLoaded: false },
-            ...prev.results.filter(r => !(r.aptName === aptName && r.dongCode === dongCode)),
-          ],
-          loading: false,
-          loadingAth: true,
-          error: null,
-        }))
-        loadAth(dongCode, aptName, recentDeals)
-        return
+      // fallback: 최근 5년
+      if (recentDeals.length === 0) {
+        const [a, b] = await Promise.all([
+          fetchChunk(dongCode, aptName, currentYear - 5, currentYear - 2),
+          fetchChunk(dongCode, aptName, currentYear - 1, currentYear),
+        ])
+        recentDeals = [...a, ...b]
       }
 
-      // Phase 1 fallback: 최근 5년으로 확장 (거래 뜸한 단지 대응)
-      // 최근 1년과 그 이전 4년을 병렬로 가져옴
-      const [extRecent, extOld] = await Promise.all([
-        fetchChunk(dongCode, aptName, currentYear - 5, currentYear - 2),
-        fetchChunk(dongCode, aptName, currentYear - 1, currentYear),
-      ])
-      const extDeals = [...extRecent, ...extOld]
-      const units = aggregateByArea(extDeals)
+      const newResults = buildResults(recentDeals, aptName, dongCode, false)
+
       setState(prev => ({
         results: [
-          { aptName, dongCode, units, athLoaded: false },
-          ...prev.results.filter(r => !(r.aptName === aptName && r.dongCode === dongCode)),
+          ...newResults,
+          ...removeBySearch(prev.results, aptName, dongCode),
         ],
         loading: false,
         loadingAth: true,
         error: null,
       }))
-      loadAth(dongCode, aptName, extDeals)
+
+      loadAth(dongCode, aptName, recentDeals)
     } catch (e) {
       setState(prev => ({
         ...prev,
@@ -102,7 +115,7 @@ export function useAptSearch() {
         ...prev,
         loadingAth: false,
         results: prev.results.map(r =>
-          r.aptName === aptName && r.dongCode === dongCode ? { ...r, athLoaded: true } : r
+          r.searchTerm === aptName && r.dongCode === dongCode ? { ...r, athLoaded: true } : r
         ),
       }))
       return
@@ -110,21 +123,21 @@ export function useAptSearch() {
 
     Promise.all(chunks.map(([from, to]) => fetchChunk(dongCode, aptName, from, to)))
       .then(chunkDeals => {
-        const allDeals: RawDeal[] = [...recentDeals, ...chunkDeals.flat()]
-        const units = aggregateByArea(allDeals)
+        const allDeals = [...recentDeals, ...chunkDeals.flat()]
+        const athResults = buildResults(allDeals, aptName, dongCode, true)
         setState(prev => ({
           ...prev,
           loadingAth: false,
-          results: prev.results.map(r =>
-            r.aptName === aptName && r.dongCode === dongCode
-              ? { aptName, dongCode, units, athLoaded: true }
-              : r
-          ),
+          results: [
+            ...athResults,
+            ...removeBySearch(prev.results, aptName, dongCode),
+          ],
         }))
       })
       .catch(() => setState(prev => ({ ...prev, loadingAth: false })))
   }
 
+  // 개별 행 삭제 (aptName = MOLIT 이름 기준)
   const removeResult = useCallback((aptName: string, dongCode: string) => {
     setState(prev => ({
       ...prev,
