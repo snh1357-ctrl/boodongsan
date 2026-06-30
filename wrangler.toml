@@ -10,4 +10,4 @@ pages_build_output_dir = "dist"
 
 [[kv_namespaces]]
 binding = "APT_CACHE"
-id = "YOUR_KV_NAMESPACE_ID"
+id = "1f38668814af4ec7a1973823bee72c30"
