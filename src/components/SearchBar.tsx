@@ -1,6 +1,6 @@
 // src/components/SearchBar.tsx
 import { useState, useEffect, useRef } from 'react'
-import type { BjdongEntry } from '../types'
+import type { BjdongEntry, AptResult } from '../types'
 
 interface AptEntry { name: string; code: string; emdNm: string }
 
@@ -8,6 +8,11 @@ interface Props {
   bjdong: BjdongEntry[]
   onSearch: (dongCode: string, aptName: string) => void
   loading: boolean
+  pending: AptResult[]
+  loadingAth: boolean
+  onAdd: (aptName: string, dongCode: string) => void
+  onAddAll: () => void
+  onClearPending: () => void
 }
 
 const CHOSUNG = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ']
@@ -27,20 +32,19 @@ function matchToken(target: string, tok: string): boolean {
 }
 
 function scoreApt(apt: AptEntry, tokens: string[]): boolean {
-  // 모든 토큰이 아파트명 또는 지역명에 매칭되어야 함
   return tokens.every(tok =>
     matchToken(apt.name, tok) || matchToken(apt.emdNm, tok)
   )
 }
 
-export function SearchBar({ bjdong: _bjdong, onSearch, loading }: Props) {
+export function SearchBar({ bjdong: _bjdong, onSearch, loading, pending, loadingAth, onAdd, onAddAll, onClearPending }: Props) {
   const [query, setQuery] = useState('')
   const [aptIndex, setAptIndex] = useState<AptEntry[]>([])
   const [aptIndexLoaded, setAptIndexLoaded] = useState(false)
   const [suggestions, setSuggestions] = useState<AptEntry[]>([])
   const [activeIdx, setActiveIdx] = useState(-1)
   const inputRef = useRef<HTMLInputElement>(null)
-  const skipSearchRef = useRef(false)  // select 후 query 변경으로 인한 재검색 방지
+  const skipSearchRef = useRef(false)
 
   useEffect(() => {
     fetch('/apt-index.json')
@@ -66,7 +70,7 @@ export function SearchBar({ bjdong: _bjdong, onSearch, loading }: Props) {
   }, [query, aptIndex])
 
   const select = (apt: AptEntry) => {
-    skipSearchRef.current = true  // 다음 useEffect 스킵
+    skipSearchRef.current = true
     setQuery(apt.name)
     setSuggestions([])
     setActiveIdx(-1)
@@ -79,7 +83,7 @@ export function SearchBar({ bjdong: _bjdong, onSearch, loading }: Props) {
     else if (e.key === 'Enter') {
       e.preventDefault()
       if (activeIdx >= 0 && suggestions[activeIdx]) select(suggestions[activeIdx])
-      else if (suggestions.length > 0) select(suggestions[0])  // 엔터 → 첫 번째 후보 즉시 선택
+      else if (suggestions.length > 0) select(suggestions[0])
     }
   }
 
@@ -87,7 +91,8 @@ export function SearchBar({ bjdong: _bjdong, onSearch, loading }: Props) {
     ? '로딩중…'
     : '아파트명 검색 (초성 검색 지원: ㄹㅁㅇ, 지역명+아파트명 조합 가능)'
 
-  const DropdownList = ({ isMobile = false }: { isMobile?: boolean }) =>
+  // 자동완성 드랍다운 (기존)
+  const AutoSuggest = ({ isMobile = false }: { isMobile?: boolean }) =>
     suggestions.length === 0 ? null : (
       <div style={{
         position: isMobile ? 'static' : 'absolute',
@@ -103,7 +108,6 @@ export function SearchBar({ bjdong: _bjdong, onSearch, loading }: Props) {
         {suggestions.map((apt, i) => (
           <div
             key={`${apt.name}|${apt.code}`}
-            // onMouseDown 사용: blur보다 먼저 발생해서 드롭다운이 닫히기 전에 선택됨
             onMouseDown={(e) => { e.preventDefault(); select(apt) }}
             style={{
               padding: '8px 12px', cursor: 'pointer',
@@ -118,6 +122,75 @@ export function SearchBar({ bjdong: _bjdong, onSearch, loading }: Props) {
         ))}
       </div>
     )
+
+  // 검색 결과 드랍다운 (검색 후 단지 선택용)
+  const ResultDropdown = () => {
+    if (pending.length === 0 && !loading) return null
+    return (
+      <div style={{
+        position: 'absolute',
+        top: '100%',
+        left: 0,
+        zIndex: 299,
+        minWidth: 320,
+        background: '#fff',
+        border: '1px solid #bbb',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
+        borderRadius: 2,
+      }}>
+        {/* 헤더 */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '6px 10px', borderBottom: '1px solid #eee',
+          background: '#f5f5f5', fontSize: 12, color: '#555',
+        }}>
+          <span>
+            {loading ? '조회중…' : `${pending.length}개 단지 발견`}
+            {loadingAth && !loading ? ' · ATH 로딩중…' : ''}
+          </span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {pending.length > 1 && (
+              <button
+                onMouseDown={(e) => { e.preventDefault(); onAddAll() }}
+                style={{
+                  fontSize: 11, padding: '2px 8px', cursor: 'pointer',
+                  background: '#1a73e8', color: '#fff', border: 'none', borderRadius: 2,
+                }}
+              >
+                전체 추가
+              </button>
+            )}
+            <button
+              onMouseDown={(e) => { e.preventDefault(); onClearPending() }}
+              style={{
+                fontSize: 11, padding: '2px 6px', cursor: 'pointer',
+                background: 'none', color: '#888', border: '1px solid #ccc', borderRadius: 2,
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+        {/* 단지 목록 */}
+        {pending.map(r => (
+          <div
+            key={`${r.aptName}__${r.dongCode}`}
+            onMouseDown={(e) => { e.preventDefault(); onAdd(r.aptName, r.dongCode) }}
+            style={{
+              padding: '8px 12px', cursor: 'pointer',
+              borderBottom: '1px solid #f0f0f0',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = '#f0f7ff')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+          >
+            <span style={{ fontWeight: 500, fontSize: 13 }}>{r.aptName}</span>
+            <span style={{ fontSize: 11, color: '#1a73e8', fontWeight: 600 }}>+ 추가</span>
+          </div>
+        ))}
+      </div>
+    )
+  }
 
   return (
     <>
@@ -140,7 +213,8 @@ export function SearchBar({ bjdong: _bjdong, onSearch, loading }: Props) {
             style={{ flex: 1 }}
             autoComplete="off"
           />
-          <DropdownList />
+          <AutoSuggest />
+          {suggestions.length === 0 && <ResultDropdown />}
         </div>
         <button
           className="xl-addbtn"
@@ -175,7 +249,35 @@ export function SearchBar({ bjdong: _bjdong, onSearch, loading }: Props) {
             {loading ? '…' : '조회'}
           </button>
         </div>
-        <DropdownList isMobile />
+        <AutoSuggest isMobile />
+        {/* 모바일 결과 드랍다운 */}
+        {pending.length > 0 && (
+          <div style={{ background: '#fff', border: '1px solid #ddd', borderTop: 'none' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: '#f5f5f5', fontSize: 12 }}>
+              <span>{pending.length}개 단지</span>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {pending.length > 1 && (
+                  <button onMouseDown={(e) => { e.preventDefault(); onAddAll() }}
+                    style={{ fontSize: 11, padding: '2px 8px', background: '#1a73e8', color: '#fff', border: 'none', borderRadius: 2 }}>
+                    전체 추가
+                  </button>
+                )}
+                <button onMouseDown={(e) => { e.preventDefault(); onClearPending() }}
+                  style={{ fontSize: 11, padding: '2px 6px', background: 'none', color: '#888', border: '1px solid #ccc', borderRadius: 2 }}>
+                  ✕
+                </button>
+              </div>
+            </div>
+            {pending.map(r => (
+              <div key={`${r.aptName}__${r.dongCode}`}
+                onMouseDown={(e) => { e.preventDefault(); onAdd(r.aptName, r.dongCode) }}
+                style={{ padding: '8px 12px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontWeight: 500, fontSize: 13 }}>{r.aptName}</span>
+                <span style={{ fontSize: 11, color: '#1a73e8' }}>+ 추가</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </>
   )

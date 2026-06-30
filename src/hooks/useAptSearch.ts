@@ -4,7 +4,13 @@ import type { AptResult, RawDeal } from '../types'
 import { aggregateByArea } from '../lib/aggregate'
 
 interface SearchParams { dongCode: string; aptName: string }
-interface SearchState  { results: AptResult[]; loading: boolean; loadingAth: boolean; error: string | null }
+interface SearchState {
+  results: AptResult[]       // 테이블에 고정된 항목
+  pending: AptResult[]       // 검색 후 드랍다운에 표시 중인 항목
+  loading: boolean
+  loadingAth: boolean
+  error: string | null
+}
 
 const currentYear = new Date().getFullYear()
 const ATH_START_YEAR = 2012
@@ -31,12 +37,6 @@ async function fetchChunk(dongCode: string, aptName: string, fromYear: number, t
   return data.deals ?? []
 }
 
-// 동일 검색어로 조회된 기존 결과 모두 제거
-function removeBySearch(results: AptResult[], searchTerm: string, dongCode: string) {
-  return results.filter(r => !(r.searchTerm === searchTerm && r.dongCode === dongCode))
-}
-
-// 거래 데이터를 MOLIT aptNm 별로 그룹화 → 각각 AptResult 생성
 function buildResults(deals: RawDeal[], searchTerm: string, dongCode: string, athLoaded: boolean): AptResult[] {
   const grouped = new Map<string, RawDeal[]>()
   for (const d of deals) {
@@ -45,7 +45,6 @@ function buildResults(deals: RawDeal[], searchTerm: string, dongCode: string, at
     if (!grouped.has(name)) grouped.set(name, [])
     grouped.get(name)!.push(d)
   }
-  // 이름 오름차순 정렬 (차수 순서: 현대1차, 현대2차, ...)
   return [...grouped.entries()]
     .sort(([a], [b]) => a.localeCompare(b, 'ko'))
     .map(([molitName, molitDeals]) => ({
@@ -57,9 +56,15 @@ function buildResults(deals: RawDeal[], searchTerm: string, dongCode: string, at
     }))
 }
 
+// results 배열에서 searchTerm+dongCode 그룹 제거
+function removeBySearch(arr: AptResult[], searchTerm: string, dongCode: string) {
+  return arr.filter(r => !(r.searchTerm === searchTerm && r.dongCode === dongCode))
+}
+
 export function useAptSearch() {
   const [state, setState] = useState<SearchState>(() => ({
     results: loadSavedResults(),
+    pending: [],
     loading: false,
     loadingAth: false,
     error: null,
@@ -70,7 +75,7 @@ export function useAptSearch() {
   }, [state.results])
 
   const search = useCallback(async ({ dongCode, aptName }: SearchParams) => {
-    setState(prev => ({ ...prev, loading: true, loadingAth: false, error: null }))
+    setState(prev => ({ ...prev, loading: true, loadingAth: false, error: null, pending: [] }))
 
     try {
       // Phase 1: 최근 12개월
@@ -85,13 +90,11 @@ export function useAptSearch() {
         recentDeals = [...a, ...b]
       }
 
-      const newResults = buildResults(recentDeals, aptName, dongCode, false)
+      const newPending = buildResults(recentDeals, aptName, dongCode, false)
 
       setState(prev => ({
-        results: [
-          ...newResults,
-          ...removeBySearch(prev.results, aptName, dongCode),
-        ],
+        ...prev,
+        pending: newPending,
         loading: false,
         loadingAth: true,
         error: null,
@@ -110,34 +113,85 @@ export function useAptSearch() {
 
   function loadAth(dongCode: string, aptName: string, recentDeals: RawDeal[]) {
     const chunks = athChunks()
+
+    const finish = (athResults: AptResult[]) => {
+      setState(prev => {
+        // pending 업데이트 (아직 추가 안 한 것들)
+        const pendingNames = new Set(prev.pending.map(r => r.aptName))
+        const newPending = athResults.filter(r => pendingNames.has(r.aptName))
+
+        // results에 이미 추가된 것들도 ATH 업데이트
+        const addedNames = new Set(
+          prev.results
+            .filter(r => r.searchTerm === aptName && r.dongCode === dongCode)
+            .map(r => r.aptName)
+        )
+        const updatedResults = prev.results.map(r =>
+          r.searchTerm === aptName && r.dongCode === dongCode && addedNames.has(r.aptName)
+            ? (athResults.find(a => a.aptName === r.aptName) ?? r)
+            : r
+        )
+
+        return { ...prev, loadingAth: false, pending: newPending, results: updatedResults }
+      })
+    }
+
     if (chunks.length === 0) {
-      setState(prev => ({
-        ...prev,
-        loadingAth: false,
-        results: prev.results.map(r =>
-          r.searchTerm === aptName && r.dongCode === dongCode ? { ...r, athLoaded: true } : r
-        ),
-      }))
+      setState(prev => {
+        const updated = prev.pending.map(r => ({ ...r, athLoaded: true }))
+        return { ...prev, loadingAth: false, pending: updated }
+      })
       return
     }
 
     Promise.all(chunks.map(([from, to]) => fetchChunk(dongCode, aptName, from, to)))
       .then(chunkDeals => {
         const allDeals = [...recentDeals, ...chunkDeals.flat()]
-        const athResults = buildResults(allDeals, aptName, dongCode, true)
-        setState(prev => ({
-          ...prev,
-          loadingAth: false,
-          results: [
-            ...athResults,
-            ...removeBySearch(prev.results, aptName, dongCode),
-          ],
-        }))
+        finish(buildResults(allDeals, aptName, dongCode, true))
       })
       .catch(() => setState(prev => ({ ...prev, loadingAth: false })))
   }
 
-  // 개별 행 삭제 (aptName = MOLIT 이름 기준)
+  // 드랍다운에서 단건 테이블 추가
+  const addToTable = useCallback((aptName: string, dongCode: string) => {
+    setState(prev => {
+      const item = prev.pending.find(r => r.aptName === aptName && r.dongCode === dongCode)
+      if (!item) return prev
+      return {
+        ...prev,
+        pending: prev.pending.filter(r => !(r.aptName === aptName && r.dongCode === dongCode)),
+        // 같은 항목이 이미 테이블에 있으면 업데이트, 없으면 추가
+        results: prev.results.some(r => r.aptName === aptName && r.dongCode === dongCode)
+          ? prev.results.map(r => r.aptName === aptName && r.dongCode === dongCode ? item : r)
+          : [...prev.results, item],
+      }
+    })
+  }, [])
+
+  // 드랍다운에서 전체 테이블 추가
+  const addAllToTable = useCallback(() => {
+    setState(prev => {
+      if (prev.pending.length === 0) return prev
+      const existingKeys = new Set(prev.results.map(r => `${r.aptName}__${r.dongCode}`))
+      const toAdd = prev.pending.filter(r => !existingKeys.has(`${r.aptName}__${r.dongCode}`))
+      const toUpdate = prev.pending.filter(r => existingKeys.has(`${r.aptName}__${r.dongCode}`))
+      return {
+        ...prev,
+        pending: [],
+        results: [
+          ...prev.results.map(r => toUpdate.find(u => u.aptName === r.aptName && u.dongCode === r.dongCode) ?? r),
+          ...toAdd,
+        ],
+      }
+    })
+  }, [])
+
+  // 드랍다운 닫기
+  const clearPending = useCallback(() => {
+    setState(prev => ({ ...prev, pending: [] }))
+  }, [])
+
+  // 테이블 개별 삭제
   const removeResult = useCallback((aptName: string, dongCode: string) => {
     setState(prev => ({
       ...prev,
@@ -145,7 +199,7 @@ export function useAptSearch() {
     }))
   }, [])
 
-  // 검색 그룹 전체 삭제 (searchTerm 기준)
+  // 테이블 그룹 전체 삭제
   const removeGroup = useCallback((searchTerm: string, dongCode: string) => {
     setState(prev => ({
       ...prev,
@@ -153,5 +207,5 @@ export function useAptSearch() {
     }))
   }, [])
 
-  return { ...state, search, removeResult, removeGroup }
+  return { ...state, search, addToTable, addAllToTable, clearPending, removeResult, removeGroup }
 }
