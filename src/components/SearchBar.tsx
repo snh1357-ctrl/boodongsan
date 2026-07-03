@@ -11,12 +11,13 @@ interface Props {
   pending: AptResult[]
   loadingAth: boolean
   hasResults: boolean
+  noResult: string | null
   onAdd: (aptName: string, dongCode: string) => void
   onAddAll: () => void
   onClearPending: () => void
 }
 
-export function SearchBar({ bjdong: _bjdong, onSearch, loading, pending, loadingAth, hasResults, onAdd, onAddAll, onClearPending }: Props) {
+export function SearchBar({ bjdong: _bjdong, onSearch, loading, pending, loadingAth, hasResults, noResult, onAdd, onAddAll, onClearPending }: Props) {
   const [query, setQuery] = useState('')
   const { aptIndex, loaded: aptIndexLoaded } = useAptIndex()
   const [suggestions, setSuggestions] = useState<AptEntry[]>([])
@@ -37,17 +38,29 @@ export function SearchBar({ bjdong: _bjdong, onSearch, loading, pending, loading
     setQuery(apt.name)
     setSuggestions([])
     setActiveIdx(-1)
+    inputRef.current?.blur()  // 선택 후 자동완성이 다시 열리지 않도록 포커스 해제
     onSearch(apt.code, apt.name)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx(i => Math.min(i + 1, suggestions.length - 1)) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIdx(i => Math.max(i - 1, -1)) }
+    else if (e.key === 'Escape') { setSuggestions([]); setActiveIdx(-1); onClearPending() }
     else if (e.key === 'Enter') {
       e.preventDefault()
       if (activeIdx >= 0 && suggestions[activeIdx]) select(suggestions[activeIdx])
       else if (suggestions.length > 0) select(suggestions[0])
     }
+  }
+
+  // 포커스가 벗어나면 자동완성 닫기 (제안 클릭은 onMouseDown이 먼저 처리)
+  const handleBlur = () => {
+    setTimeout(() => { setSuggestions([]); setActiveIdx(-1) }, 150)
+  }
+
+  const handleChange = (v: string) => {
+    setQuery(v)
+    if (noResult) onClearPending()  // 다시 입력하면 '결과 없음' 메시지 닫기
   }
 
   const placeholder = !aptIndexLoaded
@@ -86,7 +99,27 @@ export function SearchBar({ bjdong: _bjdong, onSearch, loading, pending, loading
     )
 
   const ResultDropdown = () => {
-    if (pending.length === 0 && !loading) return null
+    if (pending.length === 0 && !loading && !noResult) return null
+    if (noResult && !loading) {
+      return (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, zIndex: 299,
+          minWidth: 320, background: '#fff', border: '1px solid #bbb',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.18)', borderRadius: 2,
+          padding: '10px 12px', fontSize: 12, color: '#666',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+        }}>
+          <span>
+            <strong>{noResult}</strong> 매매 실거래 내역이 없습니다.<br />
+            <span style={{ fontSize: 11, color: '#999' }}>신축·전매제한 단지는 첫 매매 신고 전까지 표시되지 않아요.</span>
+          </span>
+          <button onMouseDown={(e) => { e.preventDefault(); onClearPending() }}
+            style={{ fontSize: 11, padding: '2px 6px', cursor: 'pointer', background: 'none', color: '#888', border: '1px solid #ccc', borderRadius: 2, flexShrink: 0 }}>
+            ✕
+          </button>
+        </div>
+      )
+    }
     return (
       <div style={{
         position: 'absolute', top: '100%', left: 0, zIndex: 299,
@@ -146,8 +179,9 @@ export function SearchBar({ bjdong: _bjdong, onSearch, loading, pending, loading
             className="xl-finput"
             placeholder={placeholder}
             value={query}
-            onChange={e => setQuery(e.target.value)}
+            onChange={e => handleChange(e.target.value)}
             onKeyDown={handleKeyDown}
+            onBlur={handleBlur}
             style={{ flex: 1 }}
             autoComplete="off"
           />
@@ -175,8 +209,9 @@ export function SearchBar({ bjdong: _bjdong, onSearch, loading, pending, loading
           <input
             placeholder={placeholder}
             value={query}
-            onChange={e => setQuery(e.target.value)}
+            onChange={e => handleChange(e.target.value)}
             onKeyDown={handleKeyDown}
+            onBlur={handleBlur}
             autoComplete="off"
           />
           <button
@@ -188,6 +223,13 @@ export function SearchBar({ bjdong: _bjdong, onSearch, loading, pending, loading
           </button>
         </div>
         <SuggestList isMobile />
+        {noResult && !loading && (
+          <div style={{ background: '#fff', border: '1px solid #ddd', borderTop: 'none', padding: '8px 12px', fontSize: 12, color: '#666', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+            <span><strong>{noResult}</strong> 매매 실거래 내역이 없습니다.</span>
+            <button onMouseDown={(e) => { e.preventDefault(); onClearPending() }}
+              style={{ fontSize: 11, padding: '2px 6px', background: 'none', color: '#888', border: '1px solid #ccc', borderRadius: 2, flexShrink: 0 }}>✕</button>
+          </div>
+        )}
         {pending.length > 0 && (
           <div style={{ background: '#fff', border: '1px solid #ddd', borderTop: 'none' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: '#f5f5f5', fontSize: 12 }}>

@@ -7,6 +7,38 @@ interface AptInfo {
   houseHoldCnt: number | null
   buildYear: string | null
   exclusiveRatio: number | null
+  parkingPerHousehold: number | null
+}
+
+interface RawRent {
+  aptNm: string
+  excluUseAr: string
+  deposit: string
+  monthlyRent: string
+  dealYear: string
+  dealMonth: string
+  dealDay: string
+}
+
+// 최근 12개월 전월세에서 면적별 최신 순수 전세(월세 0) 보증금 추출
+async function fetchJeonseByArea(aptName: string, dongCode: string): Promise<Map<number, { price: number; date: string }>> {
+  const map = new Map<number, { price: number; date: string }>()
+  try {
+    const url = `/api/rent?dongCode=${encodeURIComponent(dongCode)}&aptName=${encodeURIComponent(aptName)}&months=12`
+    const res = await fetch(url)
+    if (!res.ok) return map
+    const data = await res.json() as { rents: RawRent[] }
+    for (const r of data.rents ?? []) {
+      if ((parseInt(r.monthlyRent) || 0) > 0) continue  // 월세 낀 계약 제외
+      const deposit = parseInt(r.deposit) || 0
+      if (deposit <= 0) continue
+      const area = Math.round(parseFloat(r.excluUseAr) * 100) / 100
+      const date = `${r.dealYear}-${String(+r.dealMonth).padStart(2, '0')}-${String(+r.dealDay).padStart(2, '0')}`
+      const prev = map.get(area)
+      if (!prev || date > prev.date) map.set(area, { price: deposit, date })
+    }
+  } catch {}
+  return map
 }
 
 async function fetchAptInfo(aptName: string, dongCode: string): Promise<AptInfo | null> {
@@ -19,12 +51,14 @@ async function fetchAptInfo(aptName: string, dongCode: string): Promise<AptInfo 
       houseHoldCnt?: number | null
       buildYear?: string | null
       exclusiveRatio?: number | null
+      parkingPerHousehold?: number | null
     }
     if (!data.found) return null
     return {
       houseHoldCnt: data.houseHoldCnt ?? null,
       buildYear: data.buildYear ?? null,
       exclusiveRatio: data.exclusiveRatio ?? null,
+      parkingPerHousehold: data.parkingPerHousehold ?? null,
     }
   } catch {
     return null
@@ -38,6 +72,7 @@ interface SearchState {
   loading: boolean
   loadingAth: boolean
   error: string | null
+  noResult: string | null    // 검색 결과 0건이었던 아파트명 (피드백 표시용)
 }
 
 const currentYear = new Date().getFullYear()
@@ -107,13 +142,14 @@ export function useAptSearch() {
     loading: false,
     loadingAth: false,
     error: null,
+    noResult: null,
   }))
 
   useEffect(() => {
     try { localStorage.setItem('apt_results', JSON.stringify(state.results)) } catch {}
   }, [state.results])
 
-  // 단지 정보(세대수·연식·전용률) 조회 후 results에 반영
+  // 단지 정보(세대수·연식·전용률·주차) + 전세가 조회 후 results에 반영
   const loadAptInfo = useCallback((aptName: string, dongCode: string) => {
     fetchAptInfo(aptName, dongCode).then(info => {
       if (info === null) return
@@ -126,6 +162,29 @@ export function useAptSearch() {
                 houseHoldCnt: info.houseHoldCnt ?? r.houseHoldCnt,
                 buildYear: r.buildYear ?? info.buildYear ?? undefined,
                 exclusiveRatio: info.exclusiveRatio ?? r.exclusiveRatio,
+                parkingPerHousehold: info.parkingPerHousehold ?? r.parkingPerHousehold,
+              }
+            : r
+        ),
+      }))
+    })
+    fetchJeonseByArea(aptName, dongCode).then(jeonseMap => {
+      if (jeonseMap.size === 0) return
+      setState(prev => ({
+        ...prev,
+        results: prev.results.map(r =>
+          r.aptName === aptName && r.dongCode === dongCode
+            ? {
+                ...r,
+                units: r.units.map(u => {
+                  const j = jeonseMap.get(u.area)
+                  if (!j) return u
+                  return {
+                    ...u,
+                    jeonse: j,
+                    jeonseRatio: u.lastDeal.price > 0 ? Math.round((j.price / u.lastDeal.price) * 100) : undefined,
+                  }
+                }),
               }
             : r
         ),
@@ -133,14 +192,16 @@ export function useAptSearch() {
     })
   }, [])
 
-  // localStorage에서 복원된 결과 중 단지 정보가 없는 항목 보강 (최초 1회)
+  // localStorage에서 복원된 결과 중 단지·전세 정보가 없는 항목 보강 (최초 1회)
   useEffect(() => {
-    const missing = loadSavedResults().filter(r => r.houseHoldCnt == null || r.exclusiveRatio == null)
+    const missing = loadSavedResults().filter(r =>
+      r.houseHoldCnt == null || r.exclusiveRatio == null || r.units.some(u => u.jeonse == null)
+    )
     missing.forEach(r => loadAptInfo(r.aptName, r.dongCode))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const search = useCallback(async ({ dongCode, aptName }: SearchParams) => {
-    setState(prev => ({ ...prev, loading: true, loadingAth: false, error: null, pending: [] }))
+    setState(prev => ({ ...prev, loading: true, loadingAth: false, error: null, pending: [], noResult: null }))
 
     try {
       // ATH 전체 기간 조회를 최근 거래 조회와 동시에 시작 (대기 시간 단축)
@@ -156,7 +217,21 @@ export function useAptSearch() {
         recentDeals = await fetchChunk(dongCode, aptName, currentYear - 5, currentYear - 2)
       }
 
-      const newPending = buildResults(recentDeals, aptName, dongCode, false)
+      let newPending = buildResults(recentDeals, aptName, dongCode, false)
+      let athDone = false
+
+      // 최근 5년 거래가 없으면 전체 기간(2012~)에서 확인
+      if (newPending.length === 0) {
+        const chunkDeals = await athPromise
+        const allDeals = dedupeDeals([...recentDeals, ...chunkDeals.flat()])
+        newPending = buildResults(allDeals, aptName, dongCode, true)
+        athDone = true
+        // 전체 기간에도 거래가 없음 → 명시적 피드백 (신축·전매제한 등)
+        if (newPending.length === 0) {
+          setState(prev => ({ ...prev, loading: false, loadingAth: false, pending: [], noResult: aptName }))
+          return
+        }
+      }
 
       // 단지가 하나이면 드랍다운 없이 바로 추가
       if (newPending.length === 1) {
@@ -167,7 +242,7 @@ export function useAptSearch() {
             ...prev,
             pending: [],
             loading: false,
-            loadingAth: true,
+            loadingAth: !athDone,
             error: null,
             results: exists
               ? prev.results.map(r => r.aptName === item.aptName && r.dongCode === item.dongCode ? item : r)
@@ -180,12 +255,12 @@ export function useAptSearch() {
           ...prev,
           pending: newPending,
           loading: false,
-          loadingAth: true,
+          loadingAth: !athDone,
           error: null,
         }))
       }
 
-      loadAth(dongCode, aptName, recentDeals, athPromise)
+      if (!athDone) loadAth(dongCode, aptName, recentDeals, athPromise)
     } catch (e) {
       setState(prev => ({
         ...prev,
@@ -218,12 +293,22 @@ export function useAptSearch() {
           if (r.searchTerm !== aptName || r.dongCode !== dongCode || !addedNames.has(r.aptName)) return r
           const a = athResults.find(a => a.aptName === r.aptName)
           if (!a) return r
-          // 이미 조회된 단지 정보(세대수·전용률·연식)는 유지
+          // 이미 조회된 단지 정보(세대수·전용률·연식·주차·전세)는 유지
           return {
             ...a,
             houseHoldCnt: r.houseHoldCnt,
             exclusiveRatio: r.exclusiveRatio,
+            parkingPerHousehold: r.parkingPerHousehold,
             buildYear: a.buildYear ?? r.buildYear,
+            units: a.units.map(u => {
+              const old = r.units.find(o => o.area === u.area)
+              if (!old?.jeonse) return u
+              return {
+                ...u,
+                jeonse: old.jeonse,
+                jeonseRatio: u.lastDeal.price > 0 ? Math.round((old.jeonse.price / u.lastDeal.price) * 100) : old.jeonseRatio,
+              }
+            }),
           }
         })
 
@@ -276,9 +361,9 @@ export function useAptSearch() {
     toFetch.forEach(({ aptName, dongCode }) => loadAptInfo(aptName, dongCode))
   }, [loadAptInfo])
 
-  // 드랍다운 닫기
+  // 드랍다운 닫기 (결과 없음 메시지도 함께 닫음)
   const clearPending = useCallback(() => {
-    setState(prev => ({ ...prev, pending: [] }))
+    setState(prev => ({ ...prev, pending: [], noResult: null }))
   }, [])
 
   // 테이블 개별 삭제

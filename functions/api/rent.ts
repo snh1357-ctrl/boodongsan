@@ -1,0 +1,138 @@
+// functions/api/rent.ts
+// 아파트 전월세 실거래 조회 (RTMSDataSvcAptRent)
+// KV 캐시: `r:{dongCode}:{ym}` — 과거 월 영구, 당월 1시간 TTL (search.ts와 동일 전략)
+
+interface Env {
+  MOLIT_API_KEY: string
+  APT_CACHE: KVNamespace
+}
+
+interface RentItem {
+  aptNm: string
+  excluUseAr: string
+  deposit: string      // 보증금 (만원, 쉼표 제거)
+  monthlyRent: string  // 월세 (만원)
+  dealYear: string
+  dealMonth: string
+  dealDay: string
+}
+
+const BASE_URL = 'https://apis.data.go.kr/1613000/RTMSDataSvcAptRent/getRTMSDataSvcAptRent'
+
+function currentYm(): string {
+  const now = new Date()
+  return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`
+}
+
+function recentMonths(count: number): string[] {
+  const months: string[] = []
+  const now = new Date()
+  for (let i = 0; i < count; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    months.push(`${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+  return months
+}
+
+function getXml(xml: string, tag: string): string {
+  const match = xml.match(new RegExp(`<${tag}>([^<]*)<\/${tag}>`))
+  return match ? match[1].trim() : ''
+}
+
+function parseItems(text: string): RentItem[] {
+  const items: RentItem[] = []
+  for (const m of text.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+    const x = m[1]
+    items.push({
+      aptNm:       getXml(x, 'aptNm'),
+      excluUseAr:  getXml(x, 'excluUseAr'),
+      deposit:     getXml(x, 'deposit').replace(/,/g, ''),
+      monthlyRent: getXml(x, 'monthlyRent').replace(/,/g, ''),
+      dealYear:    getXml(x, 'dealYear'),
+      dealMonth:   getXml(x, 'dealMonth'),
+      dealDay:     getXml(x, 'dealDay'),
+    })
+  }
+  return items
+}
+
+async function fetchMonthFromMolit(apiKey: string, dongCode: string, ym: string): Promise<RentItem[]> {
+  try {
+    const base = `${BASE_URL}?serviceKey=${apiKey}&LAWD_CD=${dongCode}&DEAL_YMD=${ym}&numOfRows=1000`
+    const res = await fetch(`${base}&pageNo=1`)
+    if (!res.ok) return []
+    const text = await res.text()
+    const items = parseItems(text)
+    const totalPages = Math.ceil(parseInt(getXml(text, 'totalCount') || '0') / 1000)
+    if (totalPages <= 1) return items
+    const extras = await Promise.all(
+      Array.from({ length: totalPages - 1 }, (_, i) =>
+        fetch(`${base}&pageNo=${i + 2}`).then(r => r.text()).then(parseItems).catch(() => [] as RentItem[])
+      )
+    )
+    return [...items, ...extras.flat()]
+  } catch {
+    return []
+  }
+}
+
+async function getMonthData(
+  kv: KVNamespace | undefined,
+  apiKey: string,
+  dongCode: string,
+  ym: string,
+  waitUntil: (p: Promise<unknown>) => void,
+): Promise<RentItem[]> {
+  const cacheKey = `r:${dongCode}:${ym}`
+  if (kv) {
+    const cached = await kv.get<RentItem[]>(cacheKey, 'json')
+    if (cached !== null) return cached
+  }
+  const data = await fetchMonthFromMolit(apiKey, dongCode, ym)
+  if (kv) {
+    const opts = ym >= currentYm() ? { expirationTtl: 3600 } : undefined
+    waitUntil(kv.put(cacheKey, JSON.stringify(data), opts).catch(() => {}))
+  }
+  return data
+}
+
+export const onRequestGet: PagesFunction<Env> = async (context) => {
+  const url      = new URL(context.request.url)
+  const dongCode = url.searchParams.get('dongCode')
+  const aptName  = url.searchParams.get('aptName')
+  const months   = Math.min(parseInt(url.searchParams.get('months') || '12'), 24)
+
+  if (!dongCode || !aptName) {
+    return new Response(JSON.stringify({ error: 'dongCode and aptName required' }), { status: 400 })
+  }
+
+  const kv = context.env.APT_CACHE
+  const results = await Promise.all(
+    recentMonths(months).map(ym =>
+      getMonthData(kv, context.env.MOLIT_API_KEY, dongCode, ym, p => context.waitUntil(p))
+    )
+  )
+  const allRents = results.flat()
+
+  // search.ts와 동일한 이름 매칭 규칙
+  const normalize = (s: string) =>
+    s.replace(/\s/g, '').replace(/\([^)]*\)/g, '').replace(/아파트$/, '').toLowerCase()
+  const stripSuffix = (s: string) => s.replace(/\d+[차단지동블럭호]?$/, '').replace(/\d+$/, '')
+  const normTarget = normalize(aptName)
+
+  const rents = allRents.filter(d => {
+    const n = normalize(d.aptNm ?? '')
+    if (!n) return false
+    if (n === normTarget) return true
+    if (n.includes(normTarget)) return true
+    if (n.length >= 3 && normTarget.includes(n)) return true
+    const nBase = stripSuffix(n)
+    if (nBase.length >= 2 && normTarget.endsWith(nBase)) return true
+    return false
+  })
+
+  return new Response(
+    JSON.stringify({ aptName, dongCode, rents }),
+    { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
+  )
+}

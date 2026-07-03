@@ -22,6 +22,8 @@ export interface AptUnit {
   changeRate: number    // (lastDeal.price / allTimeHigh.price - 1) * 100
   dealCount3m: number
   isNewHigh: boolean    // 최근 거래가 역대 최고가를 갱신(동일 포함)했는지
+  jeonse?: DealPoint    // 최근 순수 전세(월세 0) 보증금
+  jeonseRatio?: number  // 전세가율 = 전세보증금 ÷ 최근 매매가 (%)
 }
 
 export interface AptResult {
@@ -33,6 +35,7 @@ export interface AptResult {
   buildYear?: string       // 건축년도
   houseHoldCnt?: number    // 총 세대수 (AptListService2)
   exclusiveRatio?: number  // 단지 전용률 (전용면적합 ÷ 관리비부과면적, AptBasisInfoServiceV3)
+  parkingPerHousehold?: number // 세대당 주차대수 (지상+지하, getAphusDtlInfoV3)
 }
 
 export interface StockData {

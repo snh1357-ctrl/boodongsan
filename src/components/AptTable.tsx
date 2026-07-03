@@ -50,19 +50,32 @@ function NewHighBadge() {
   return <span className="nh-badge">신고가</span>
 }
 
+// 전세가율 셀: 전세가율 % + 최근 순수 전세 보증금
+function JeonseCell({ unit }: { unit?: AptUnit }) {
+  if (!unit?.jeonse) return <td className="cell r" />
+  return (
+    <td className="cell r">
+      <div>{unit.jeonseRatio != null ? `${unit.jeonseRatio}%` : '-'}</div>
+      <div className="ext-row">전세 {formatPrice(unit.jeonse.price)}</div>
+    </td>
+  )
+}
+
 function UnitRow({ unit, rowNum, exclusiveRatio }: { unit: AptUnit; rowNum: number; exclusiveRatio?: number }) {
   const estimated = !isValidRatio(exclusiveRatio)
   const supply = toSupply(unit.area, exclusiveRatio)
+  const supplyPyeong = toPyeong(supply)
+  const perPyeong = supplyPyeong > 0 ? Math.round(unit.lastDeal.price / supplyPyeong) : 0
   return (
     <tr className="srow">
       <td className="rnum">{rowNum}</td>
       <td className="cell" style={{ paddingLeft: 48 }}>
-        <span>{toPyeong(supply)}평 (공급 {estimated ? '약 ' : ''}{supply}㎡)</span>
-        <div className="ext-row">전용 {unit.area}㎡ ({toPyeong(unit.area)}평)</div>
+        <span>{supplyPyeong}평</span>
+        <div className="ext-row">전용 {unit.area}㎡ / 공급 {estimated ? '약 ' : ''}{supply}㎡</div>
       </td>
       <td className="cell r">
         <div>{unit.isNewHigh && <NewHighBadge />}{formatPrice(unit.lastDeal.price)}</div>
-        <div className="ext-row">{unit.lastDeal.date}</div>
+        <div className="ext-row">{unit.lastDeal.date}{perPyeong > 0 ? ` · 평당 ${formatPrice(perPyeong)}` : ''}</div>
       </td>
       <td className="cell r">{formatPrice(unit.avg3m)}</td>
       <td className="cell r">
@@ -70,6 +83,7 @@ function UnitRow({ unit, rowNum, exclusiveRatio }: { unit: AptUnit; rowNum: numb
         <div className="ext-row">{unit.allTimeHigh.date}{unit.isNewHigh ? ' 갱신' : ''}</div>
       </td>
       <ChangeCell rate={unit.changeRate} />
+      <JeonseCell unit={unit} />
       <td className="cell r">{unit.dealCount3m}건</td>
       <td className="cell" />
     </tr>
@@ -100,9 +114,11 @@ function AptRow({
         <span style={{ marginRight: 4 }}>{expanded ? '▾' : '▸'}</span>
         {result.aptName}
         <div className="ext-row">
-          {result.buildYear ? `${result.buildYear}년 준공 (${Math.max(0, new Date().getFullYear() - parseInt(result.buildYear))}년차)` : ''}
-          {result.buildYear && result.houseHoldCnt ? ' · ' : ''}
-          {result.houseHoldCnt ? `${result.houseHoldCnt.toLocaleString()}세대` : ''}
+          {[
+            result.buildYear ? `${result.buildYear}년 준공 (${Math.max(0, new Date().getFullYear() - parseInt(result.buildYear))}년차)` : '',
+            result.houseHoldCnt ? `${result.houseHoldCnt.toLocaleString()}세대` : '',
+            result.parkingPerHousehold ? `주차 ${result.parkingPerHousehold}대/세대` : '',
+          ].filter(Boolean).join(' · ')}
         </div>
       </td>
       {summary ? (
@@ -111,10 +127,11 @@ function AptRow({
           <td className="cell r">{formatPrice(summary.avg3m)}</td>
           <td className="cell r">{formatPrice(summary.allTimeHigh.price)}<div className="ext-row">{summary.allTimeHigh.date}{summary.isNewHigh ? ' 갱신' : ''}</div></td>
           <ChangeCell rate={summary.changeRate} />
+          <JeonseCell unit={summary} />
           <td className="cell r">{result.units.reduce((s, u) => s + u.dealCount3m, 0)}건</td>
         </>
       ) : (
-        <td className="cell er" colSpan={5}>거래 데이터 없음</td>
+        <td className="cell er" colSpan={6}>거래 데이터 없음</td>
       )}
       <td className="cell">
         <button className="del" onClick={e => { e.stopPropagation(); onRemove() }}>삭제</button>
@@ -150,7 +167,7 @@ function GroupRow({
         <div className="ext-row">{count}개 단지{athLoaded ? '' : ' · ATH 로딩중…'}</div>
 
       </td>
-      <td className="cell" colSpan={5} />
+      <td className="cell" colSpan={6} />
       <td className="cell">
         <button className="del" onClick={e => { e.stopPropagation(); onRemove() }}>삭제</button>
       </td>
@@ -212,16 +229,17 @@ export function AptTable({ results, onRemove, onRemoveGroup }: Props) {
           <col style={{ width: 28 }} />
           <col style={{ width: 200 }} />
           <col style={{ width: 160 }} />
-          <col style={{ width: 140 }} />
+          <col style={{ width: 130 }} />
           <col style={{ width: 160 }} />
           <col style={{ width: 130 }} />
+          <col style={{ width: 100 }} />
           <col style={{ width: 80 }} />
           <col style={{ width: 70 }} />
         </colgroup>
         <thead>
           <tr>
             <td className="hcell" style={{ position: 'sticky', top: 0, zIndex: 10 }} />
-            {['A','B','C','D','E','F','G'].map(c => (
+            {['A','B','C','D','E','F','G','H'].map(c => (
               <td key={c} className="hcell" style={{ position: 'sticky', top: 0, zIndex: 10, textAlign: 'center' }}>{c}</td>
             ))}
           </tr>
@@ -232,6 +250,7 @@ export function AptTable({ results, onRemove, onRemoveGroup }: Props) {
             <td className="cell r" style={{ position: 'sticky', top: 20, zIndex: 9 }}>3개월 평균</td>
             <td className="cell r" style={{ position: 'sticky', top: 20, zIndex: 9 }}>역대 최고가</td>
             <td className="cell r" style={{ position: 'sticky', top: 20, zIndex: 9 }}>최고가 대비</td>
+            <td className="cell r" style={{ position: 'sticky', top: 20, zIndex: 9 }}>전세가율</td>
             <td className="cell r" style={{ position: 'sticky', top: 20, zIndex: 9 }}>3개월 건수</td>
             <td className="cell" style={{ position: 'sticky', top: 20, zIndex: 9 }} />
           </tr>
@@ -313,7 +332,7 @@ export function AptTable({ results, onRemove, onRemoveGroup }: Props) {
           {Array.from({ length: Math.max(0, 100 - globalRow + 1) }, (_, i) => (
             <tr key={`empty-${i}`} className="erow">
               <td className="rnum">{globalRow + i}</td>
-              {Array.from({ length: 7 }, (_, j) => <td key={j} className="cell" />)}
+              {Array.from({ length: 8 }, (_, j) => <td key={j} className="cell" />)}
             </tr>
           ))}
         </tbody>

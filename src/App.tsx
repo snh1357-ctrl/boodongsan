@@ -35,6 +35,9 @@ function ManualPage() {
           • <strong>3개월 평균</strong>: 최근 3개월 평균 거래가<br />
           • <strong>역대 최고가(ATH)</strong>: 기록상 가장 높은 거래가<br />
           • <strong>최고가 대비 등락률</strong>: 현재 거래가 ÷ 역대 최고가<br />
+          • <strong>전세가율</strong>: 최근 순수 전세 보증금 ÷ 최근 매매가<br />
+          • <strong>평당가</strong>: 최근 거래가 ÷ 공급면적 평수<br />
+          • <strong>세대당 주차</strong>: 단지 총 주차대수 ÷ 세대수 (K-apt)<br />
           • <strong>3개월 거래건수</strong>: 최근 3개월 거래량
         </div>
       </div>
@@ -83,7 +86,7 @@ function RequestPage() {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('apt')
-  const { results, pending, loading: aptLoading, loadingAth, error, search, addToTable, addAllToTable, clearPending, removeResult, removeGroup } = useAptSearch()
+  const { results, pending, loading: aptLoading, loadingAth, error, noResult, search, addToTable, addAllToTable, clearPending, removeResult, removeGroup } = useAptSearch()
 
   const handleRefresh = () => window.location.reload()
 
@@ -110,6 +113,7 @@ export default function App() {
             pending={pending}
             loadingAth={loadingAth}
             hasResults={results.length > 0}
+            noResult={noResult}
             onAdd={addToTable}
             onAddAll={addAllToTable}
             onClearPending={clearPending}

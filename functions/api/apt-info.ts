@@ -15,6 +15,7 @@ interface KaptItem {
 // 시군구별 단지 목록 (kaptCode·kaptName만 제공; 세대수 등은 기본정보 API에서 조회)
 const LIST_URL = 'https://apis.data.go.kr/1613000/AptListService2/getSigunguAptList'
 const BASIS_URL = 'https://apis.data.go.kr/1613000/AptBasisInfoServiceV3/getAphusBassInfoV3'
+const DETAIL_URL = 'https://apis.data.go.kr/1613000/AptBasisInfoServiceV3/getAphusDtlInfoV3'
 
 function getXml(xml: string, tag: string): string {
   const m = xml.match(new RegExp(`<${tag}>([^<]*)<\/${tag}>`))
@@ -25,12 +26,31 @@ interface BasisInfo {
   useDate: string | null        // 사용승인일 (YYYYMMDD)
   exclusiveRatio: number | null // 전용률 = 전용면적합(privArea) ÷ 관리비부과면적(kaptMarea)
   houseHoldCnt: number | null
+  parkingPerHousehold: number | null // 세대당 주차대수 (지상+지하)
+}
+
+// K-apt 상세정보: 주차대수 (지상 kaptdPcnt + 지하 kaptdPcntu)
+async function fetchParkingCnt(apiKey: string, kaptCode: string): Promise<number | null> {
+  try {
+    const res = await fetch(`${DETAIL_URL}?serviceKey=${apiKey}&kaptCode=${kaptCode}`)
+    if (!res.ok) return null
+    const text = await res.text()
+    const ground = parseInt(getXml(text, 'kaptdPcnt')) || 0
+    const under  = parseInt(getXml(text, 'kaptdPcntu')) || 0
+    const total = ground + under
+    return total > 0 ? total : null
+  } catch {
+    return null
+  }
 }
 
 // K-apt 공동주택 기본정보: 사용승인일·관리비부과면적·전용면적합 → 전용률 계산
 async function fetchBasisInfo(apiKey: string, kaptCode: string): Promise<BasisInfo | null> {
   try {
-    const res = await fetch(`${BASIS_URL}?serviceKey=${apiKey}&kaptCode=${kaptCode}`)
+    const [res, parkingCnt] = await Promise.all([
+      fetch(`${BASIS_URL}?serviceKey=${apiKey}&kaptCode=${kaptCode}`),
+      fetchParkingCnt(apiKey, kaptCode),
+    ])
     if (!res.ok) return null
     const text = await res.text()
     const marea = parseFloat(getXml(text, 'kaptMarea'))    // 관리비부과면적 ≈ 공급면적 합
@@ -41,10 +61,14 @@ async function fetchBasisInfo(apiKey: string, kaptCode: string): Promise<BasisIn
       // 비정상 데이터 방어 (일반 아파트 전용률 0.6~0.95 범위)
       if (r >= 0.55 && r <= 0.98) ratio = Math.round(r * 1000) / 1000
     }
+    const houseHoldCnt = parseInt(getXml(text, 'kaptdaCnt')) || null
     return {
       useDate: getXml(text, 'kaptUsedate') || null,
       exclusiveRatio: ratio,
-      houseHoldCnt: parseInt(getXml(text, 'kaptdaCnt')) || null,
+      houseHoldCnt,
+      parkingPerHousehold: parkingCnt && houseHoldCnt
+        ? Math.round((parkingCnt / houseHoldCnt) * 100) / 100
+        : null,
     }
   } catch {
     return null
@@ -135,7 +159,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
 
   // 기본정보(전용률·사용승인일) 조회 — kaptCode 단위로 30일 캐시
   let basis: BasisInfo | null = null
-  const basisCacheKey = `basis:${match.kaptCode}`
+  const basisCacheKey = `basis2:${match.kaptCode}`  // v2: 주차대수 추가하며 캐시 무효화
   if (kv) basis = await kv.get<BasisInfo>(basisCacheKey, 'json')
   if (!basis) {
     basis = await fetchBasisInfo(context.env.MOLIT_API_KEY, match.kaptCode)
@@ -154,6 +178,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       buildYear: basis?.useDate?.slice(0, 4) || null,
       useDate:   basis?.useDate ?? null,
       exclusiveRatio: basis?.exclusiveRatio ?? null,
+      parkingPerHousehold: basis?.parkingPerHousehold ?? null,
     }),
     { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
   )
