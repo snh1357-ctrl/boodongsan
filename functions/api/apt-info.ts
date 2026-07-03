@@ -10,12 +10,10 @@ interface Env {
 interface KaptItem {
   kaptCode: string   // 단지코드
   kaptName: string   // 단지명
-  kaptdaYyyy: string // 건축년도
-  kaptdaCnt: string  // 세대수
-  kaptdaDong: string // 동수
 }
 
-const LIST_URL = 'https://apis.data.go.kr/1613000/AptListService2/getAptList'
+// 시군구별 단지 목록 (kaptCode·kaptName만 제공; 세대수 등은 기본정보 API에서 조회)
+const LIST_URL = 'https://apis.data.go.kr/1613000/AptListService2/getSigunguAptList'
 const BASIS_URL = 'https://apis.data.go.kr/1613000/AptBasisInfoServiceV3/getAphusBassInfoV3'
 
 function getXml(xml: string, tag: string): string {
@@ -53,24 +51,25 @@ async function fetchBasisInfo(apiKey: string, kaptCode: string): Promise<BasisIn
   }
 }
 
+function parseKaptItems(text: string): KaptItem[] {
+  const items: KaptItem[] = []
+  for (const m of text.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+    const x = m[1]
+    items.push({
+      kaptCode: getXml(x, 'kaptCode'),
+      kaptName: getXml(x, 'kaptName'),
+    })
+  }
+  return items
+}
+
 async function fetchAptList(apiKey: string, sigunguCd: string): Promise<KaptItem[]> {
   try {
-    const url = `${LIST_URL}?serviceKey=${apiKey}&sigunguCd=${sigunguCd}&numOfRows=1000&pageNo=1`
-    const res = await fetch(url)
+    const base = `${LIST_URL}?serviceKey=${apiKey}&sigunguCode=${sigunguCd}&numOfRows=1000`
+    const res = await fetch(`${base}&pageNo=1`)
     if (!res.ok) return []
     const text = await res.text()
-
-    const items: KaptItem[] = []
-    for (const m of text.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
-      const x = m[1]
-      items.push({
-        kaptCode:   getXml(x, 'kaptCode'),
-        kaptName:   getXml(x, 'kaptName'),
-        kaptdaYyyy: getXml(x, 'kaptdaYyyy'),
-        kaptdaCnt:  getXml(x, 'kaptdaCnt'),
-        kaptdaDong: getXml(x, 'kaptdaDong'),
-      })
-    }
+    const items = parseKaptItems(text)
 
     // 페이지가 더 있으면 추가 조회
     const totalCount = parseInt(getXml(text, 'totalCount') || '0')
@@ -78,22 +77,9 @@ async function fetchAptList(apiKey: string, sigunguCd: string): Promise<KaptItem
     if (totalPages > 1) {
       const extras = await Promise.all(
         Array.from({ length: totalPages - 1 }, (_, i) =>
-          fetch(`${url}&pageNo=${i + 2}`)
+          fetch(`${base}&pageNo=${i + 2}`)
             .then(r => r.text())
-            .then(t => {
-              const list: KaptItem[] = []
-              for (const m of t.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
-                const x = m[1]
-                list.push({
-                  kaptCode:   getXml(x, 'kaptCode'),
-                  kaptName:   getXml(x, 'kaptName'),
-                  kaptdaYyyy: getXml(x, 'kaptdaYyyy'),
-                  kaptdaCnt:  getXml(x, 'kaptdaCnt'),
-                  kaptdaDong: getXml(x, 'kaptdaDong'),
-                })
-              }
-              return list
-            })
+            .then(parseKaptItems)
             .catch(() => [] as KaptItem[])
         )
       )
@@ -120,7 +106,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   }
 
   const kv = context.env.APT_CACHE
-  const cacheKey = `aptlist:${dongCode}`
+  const cacheKey = `aptlist2:${dongCode}`  // v2: getSigunguAptList로 교체하며 캐시 무효화
 
   // KV 캐시 조회 (24시간 TTL)
   let list: KaptItem[] | null = null
@@ -164,11 +150,10 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       found: true,
       kaptCode:  match.kaptCode,
       kaptName:  match.kaptName,
-      houseHoldCnt: parseInt(match.kaptdaCnt) || basis?.houseHoldCnt || null,
-      buildYear: match.kaptdaYyyy || basis?.useDate?.slice(0, 4) || null,
+      houseHoldCnt: basis?.houseHoldCnt ?? null,
+      buildYear: basis?.useDate?.slice(0, 4) || null,
       useDate:   basis?.useDate ?? null,
       exclusiveRatio: basis?.exclusiveRatio ?? null,
-      dongCnt:   parseInt(match.kaptdaDong) || null,
     }),
     { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
   )

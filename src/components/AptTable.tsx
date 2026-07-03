@@ -83,18 +83,20 @@ function AptRow({
   expanded,
   onToggle,
   onRemove,
+  topLevel = false,
 }: {
   result: AptResult
   rowNum: number
   expanded: boolean
   onToggle: () => void
   onRemove: () => void
+  topLevel?: boolean
 }) {
   const summary = result.units[0]
   return (
-    <tr className="srow" style={{ cursor: 'pointer' }} onClick={onToggle}>
+    <tr className="srow" style={{ cursor: 'pointer', ...(topLevel ? { fontWeight: 600 } : {}) }} onClick={onToggle}>
       <td className="rnum">{rowNum}</td>
-      <td className="cell tick co-cell" style={{ paddingLeft: 24 }}>
+      <td className="cell tick co-cell" style={{ paddingLeft: topLevel ? undefined : 24 }}>
         <span style={{ marginRight: 4 }}>{expanded ? '▾' : '▸'}</span>
         {result.aptName}
         <div className="ext-row">
@@ -236,6 +238,35 @@ export function AptTable({ results, onRemove, onRemoveGroup }: Props) {
         </thead>
         <tbody>
           {groups.map(group => {
+            // 단지가 1개뿐인 그룹: 그룹 행 없이 단지 행 + 평형별 행을 바로 표시
+            if (group.items.length === 1) {
+              const result = group.items[0]
+              const aptKey = `${result.dongCode}-${result.aptName}`
+              const isAptExpanded = expandedApts.has(aptKey)
+              const aptRowNum = globalRow++
+              if (isAptExpanded) result.units.forEach(() => globalRow++)
+              return (
+                <React.Fragment key={group.groupKey}>
+                  <AptRow
+                    result={result}
+                    rowNum={aptRowNum}
+                    expanded={isAptExpanded}
+                    topLevel
+                    onToggle={() => toggleApt(aptKey)}
+                    onRemove={() => onRemoveGroup(group.searchTerm, group.dongCode)}
+                  />
+                  {isAptExpanded && result.units.map((unit, i) => (
+                    <UnitRow
+                      key={`${aptKey}-${unit.area}`}
+                      unit={unit}
+                      rowNum={aptRowNum + i + 1}
+                      exclusiveRatio={result.exclusiveRatio}
+                    />
+                  ))}
+                </React.Fragment>
+              )
+            }
+
             const isGroupExpanded = expandedGroups.has(group.groupKey)
             const groupRowNum = globalRow++
             const athLoaded = group.items.every(r => r.athLoaded)

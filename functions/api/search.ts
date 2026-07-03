@@ -56,6 +56,8 @@ async function fetchMonthFromMolit(apiKey: string, dongCode: string, ym: string)
       const items: MolitItem[] = []
       for (const m of t.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
         const x = m[1]
+        // 계약 해제(취소)된 거래 제외 — 매매 확정 건만 반영
+        if (getXml(x, 'cdealType') === 'O') continue
         items.push({
           aptNm:       getXml(x, 'aptNm'),
           excluUseAr:  getXml(x, 'excluUseAr'),
@@ -93,7 +95,7 @@ async function getMonthData(
   ym: string,
   waitUntil: (p: Promise<unknown>) => void,
 ): Promise<MolitItem[]> {
-  const cacheKey = `m:${dongCode}:${ym}`
+  const cacheKey = `m2:${dongCode}:${ym}`  // v2: 해제거래 필터 추가하며 캐시 무효화
 
   // KV 캐시 조회
   if (kv) {
