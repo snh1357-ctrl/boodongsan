@@ -21,6 +21,7 @@ export interface AptUnit {
   allTimeHigh: DealPoint
   changeRate: number    // (lastDeal.price / allTimeHigh.price - 1) * 100
   dealCount3m: number
+  isNewHigh: boolean    // 최근 거래가 역대 최고가를 갱신(동일 포함)했는지
 }
 
 export interface AptResult {

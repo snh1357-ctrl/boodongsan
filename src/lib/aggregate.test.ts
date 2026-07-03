@@ -73,6 +73,25 @@ describe('aggregateByArea', () => {
     expect(aggregateByArea([])).toEqual([])
   })
 
+  it('최근 거래가 역대 최고가를 갱신하면 isNewHigh=true', () => {
+    const deals = [
+      makeDeal({ dealAmount: '100,000', dealYear: '2021', dealMonth: '1', dealDay: '1' }),
+      makeDeal({ dealAmount: '120,000', dealYear: '2024', dealMonth: '6', dealDay: '1' }),
+    ]
+    const units = aggregateByArea(deals)
+    expect(units[0].isNewHigh).toBe(true)
+    expect(units[0].allTimeHigh.date).toBe('2024-06-01')
+  })
+
+  it('최근 거래가 최고가보다 낮으면 isNewHigh=false', () => {
+    const deals = [
+      makeDeal({ dealAmount: '150,000', dealYear: '2021', dealMonth: '8', dealDay: '1' }),
+      makeDeal({ dealAmount: '110,000', dealYear: '2024', dealMonth: '6', dealDay: '1' }),
+    ]
+    const units = aggregateByArea(deals)
+    expect(units[0].isNewHigh).toBe(false)
+  })
+
   it('등락률은 역대최고가가 0일 때 0 반환', () => {
     const deals = [makeDeal({ dealAmount: '0', dealYear: '2024', dealMonth: '1', dealDay: '1' })]
     const units = aggregateByArea(deals)

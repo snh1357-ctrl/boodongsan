@@ -42,6 +42,10 @@ function toSupply(exclusive: number): number {
   return Math.round(exclusive / 0.84)
 }
 
+function NewHighBadge() {
+  return <span className="nh-badge">신고가</span>
+}
+
 function UnitRow({ unit, rowNum }: { unit: AptUnit; rowNum: number }) {
   const supply = toSupply(unit.area)
   return (
@@ -52,13 +56,13 @@ function UnitRow({ unit, rowNum }: { unit: AptUnit; rowNum: number }) {
         <div className="ext-row">공급 약 {supply}㎡ ({toPyeong(supply)}평)</div>
       </td>
       <td className="cell r">
-        <div>{formatPrice(unit.lastDeal.price)}</div>
+        <div>{unit.isNewHigh && <NewHighBadge />}{formatPrice(unit.lastDeal.price)}</div>
         <div className="ext-row">{unit.lastDeal.date}</div>
       </td>
       <td className="cell r">{formatPrice(unit.avg3m)}</td>
       <td className="cell r">
         <div>{formatPrice(unit.allTimeHigh.price)}</div>
-        <div className="ext-row">{unit.allTimeHigh.date}</div>
+        <div className="ext-row">{unit.allTimeHigh.date}{unit.isNewHigh ? ' 갱신' : ''}</div>
       </td>
       <ChangeCell rate={unit.changeRate} />
       <td className="cell r">{unit.dealCount3m}건</td>
@@ -97,9 +101,9 @@ function AptRow({
       </td>
       {summary ? (
         <>
-          <td className="cell r">{formatPrice(summary.lastDeal.price)}<div className="ext-row">{summary.lastDeal.date}</div></td>
+          <td className="cell r">{summary.isNewHigh && <NewHighBadge />}{formatPrice(summary.lastDeal.price)}<div className="ext-row">{summary.lastDeal.date}</div></td>
           <td className="cell r">{formatPrice(summary.avg3m)}</td>
-          <td className="cell r">{formatPrice(summary.allTimeHigh.price)}<div className="ext-row">{summary.allTimeHigh.date}</div></td>
+          <td className="cell r">{formatPrice(summary.allTimeHigh.price)}<div className="ext-row">{summary.allTimeHigh.date}{summary.isNewHigh ? ' 갱신' : ''}</div></td>
           <ChangeCell rate={summary.changeRate} />
           <td className="cell r">{result.units.reduce((s, u) => s + u.dealCount3m, 0)}건</td>
         </>

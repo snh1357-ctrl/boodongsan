@@ -47,6 +47,7 @@ export function aggregateByArea(deals: RawDeal[]): AptUnit[] {
       allTimeHigh: { price: athPrice, date: dealDate(athDeal) },
       changeRate: athPrice > 0 ? ((lastPrice / athPrice) - 1) * 100 : 0,
       dealCount3m: recent3m.length,
+      isNewHigh: athPrice > 0 && lastPrice >= athPrice,
     })
   }
 

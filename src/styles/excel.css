@@ -545,6 +545,9 @@
     .ext-badge.NXT { background: #006644; color: #fff; }
     .ext-badge.AHClose   { background: #546e7a; color: #fff; }
     .ext-up { color: #c00000; } .ext-dn { color: #0070c0; }
+    /* 신고가 갱신 뱃지 */
+    .nh-badge { display: inline-block; font-size: 8px; font-weight: 800; padding: 0 4px; border-radius: 2px; margin-right: 4px; letter-spacing: .3px; background: #c00020; color: #fff; vertical-align: middle; line-height: 13px; animation: nh-pulse 2s ease-in-out infinite; }
+    @keyframes nh-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
 
     /* Sort arrows in header row */
     .sort-icon { font-size: 9px; color: #aaa; margin-left: 2px; pointer-events: none; }
@@ -1010,3 +1013,5 @@
     body.dark.all-black .mkt-badge.us,
     body.dark.all-black .mkt-badge.kr,
     body.dark.all-black .mkt-badge.all { background: #555 !important; color: #ddd !important; }
+    body.all-black .nh-badge { background: #444 !important; color: #fff !important; animation: none !important; }
+    body.dark.all-black .nh-badge { background: #555 !important; color: #ddd !important; animation: none !important; }
