@@ -1,4 +1,5 @@
 // functions/api/apt-info.ts
+import { matchDeals } from './_match'
 // 국토교통부 공동주택단지목록정보 API로 세대수·건축년도 조회
 // 캐시 키: `aptlist:{sigunguCd}` → 시군구 전체 단지 목록, 24시간 TTL
 
@@ -116,10 +117,6 @@ async function fetchAptList(apiKey: string, sigunguCd: string): Promise<KaptItem
   }
 }
 
-function normalize(s: string) {
-  return s.replace(/\s/g, '').replace(/\([^)]*\)/g, '').replace(/아파트$/, '').toLowerCase()
-}
-
 export const onRequestGet: PagesFunction<Env> = async (context) => {
   const url     = new URL(context.request.url)
   const aptName = url.searchParams.get('aptName')     // MOLIT 기준 단지명
@@ -144,12 +141,8 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     }
   }
 
-  // 이름 매칭
-  const normTarget = normalize(aptName)
-  const match = list.find(item => {
-    const n = normalize(item.kaptName)
-    return n === normTarget || n.includes(normTarget) || normTarget.includes(n)
-  })
+  // 이름 매칭 (search.ts와 동일한 단계적 완화 매칭)
+  const match = matchDeals(list.map(i => ({ ...i, aptNm: i.kaptName })), aptName)[0]
 
   if (!match) {
     return new Response(JSON.stringify({ aptName, found: false }), {

@@ -50,6 +50,85 @@ function NewHighBadge() {
   return <span className="nh-badge">신고가</span>
 }
 
+// 대표 평형: 최근 3개월 거래가 가장 많은 평형, 동률이면 국민평형(전용 84㎡)에 가까운 것
+function pickRepresentative(units: AptUnit[]): AptUnit | undefined {
+  if (units.length === 0) return undefined
+  return [...units].sort((a, b) =>
+    b.dealCount3m - a.dealCount3m ||
+    Math.abs(a.area - 84) - Math.abs(b.area - 84)
+  )[0]
+}
+
+// 기본 표시 평형: 4개 이하면 전체, 많으면 거래 활발한 상위 4개
+function defaultVisibleAreas(units: AptUnit[]): Set<number> {
+  if (units.length <= 4) return new Set(units.map(u => u.area))
+  const top = [...units].sort((a, b) =>
+    b.dealCount3m - a.dealCount3m ||
+    b.lastDeal.date.localeCompare(a.lastDeal.date) ||
+    a.area - b.area
+  ).slice(0, 4)
+  return new Set(top.map(u => u.area))
+}
+
+// 평형 선택 칩 행
+function AreaChipsRow({
+  rowNum,
+  units,
+  exclusiveRatio,
+  visible,
+  onToggleArea,
+  onShowAll,
+}: {
+  rowNum: number
+  units: AptUnit[]
+  exclusiveRatio?: number
+  visible: Set<number>
+  onToggleArea: (area: number) => void
+  onShowAll: () => void
+}) {
+  const allVisible = units.every(u => visible.has(u.area))
+  // 같은 평수가 여러 타입이면 전용면적으로 구분
+  const pyeongCount = new Map<number, number>()
+  for (const u of units) {
+    const p = toPyeong(toSupply(u.area, exclusiveRatio))
+    pyeongCount.set(p, (pyeongCount.get(p) ?? 0) + 1)
+  }
+  const chipStyle = (on: boolean): React.CSSProperties => ({
+    fontSize: 10, padding: '1px 7px', cursor: 'pointer', borderRadius: 10,
+    border: on ? '1px solid #217346' : '1px solid #ccc',
+    background: on ? '#e8f5e9' : '#fff',
+    color: on ? '#217346' : '#888',
+    fontWeight: on ? 700 : 400,
+    lineHeight: '16px',
+  })
+  return (
+    <tr className="srow">
+      <td className="rnum">{rowNum}</td>
+      <td className="cell" colSpan={8} style={{ paddingLeft: 48 }}>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', padding: '2px 0' }}>
+          <span style={{ fontSize: 10, color: '#888', marginRight: 2 }}>평형 선택:</span>
+          {units.map(u => {
+            const p = toPyeong(toSupply(u.area, exclusiveRatio))
+            const label = (pyeongCount.get(p) ?? 0) > 1 ? `${p}평(${u.area})` : `${p}평`
+            return (
+              <button key={u.area} style={chipStyle(visible.has(u.area))}
+                onClick={e => { e.stopPropagation(); onToggleArea(u.area) }}>
+                {label}
+              </button>
+            )
+          })}
+          {!allVisible && (
+            <button style={{ ...chipStyle(false), borderStyle: 'dashed' }}
+              onClick={e => { e.stopPropagation(); onShowAll() }}>
+              전체 보기
+            </button>
+          )}
+        </div>
+      </td>
+    </tr>
+  )
+}
+
 // 전세가율 셀: 전세가율 % + 최근 순수 전세 보증금
 function JeonseCell({ unit }: { unit?: AptUnit }) {
   if (!unit?.jeonse) return <td className="cell r" />
@@ -106,7 +185,8 @@ function AptRow({
   onRemove: () => void
   topLevel?: boolean
 }) {
-  const summary = result.units[0]
+  const summary = pickRepresentative(result.units)
+  const repPyeong = summary ? toPyeong(toSupply(summary.area, result.exclusiveRatio)) : 0
   return (
     <tr className="srow" style={{ cursor: 'pointer', ...(topLevel ? { fontWeight: 600 } : {}) }} onClick={onToggle}>
       <td className="rnum">{rowNum}</td>
@@ -123,7 +203,7 @@ function AptRow({
       </td>
       {summary ? (
         <>
-          <td className="cell r">{summary.isNewHigh && <NewHighBadge />}{formatPrice(summary.lastDeal.price)}<div className="ext-row">{summary.lastDeal.date}</div></td>
+          <td className="cell r">{summary.isNewHigh && <NewHighBadge />}{formatPrice(summary.lastDeal.price)}<div className="ext-row">{summary.lastDeal.date} · {repPyeong}평 기준</div></td>
           <td className="cell r">{formatPrice(summary.avg3m)}</td>
           <td className="cell r">{formatPrice(summary.allTimeHigh.price)}<div className="ext-row">{summary.allTimeHigh.date}{summary.isNewHigh ? ' 갱신' : ''}</div></td>
           <ChangeCell rate={summary.changeRate} />
@@ -178,6 +258,27 @@ function GroupRow({
 export function AptTable({ results, onRemove, onRemoveGroup }: Props) {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [expandedApts, setExpandedApts] = useState<Set<string>>(new Set())
+  // 단지별 표시 평형 선택 (없으면 거래 활발한 상위 4개 기본값)
+  const [visibleAreas, setVisibleAreas] = useState<Map<string, Set<number>>>(new Map())
+
+  const getVisible = (aptKey: string, units: AptUnit[]): Set<number> =>
+    visibleAreas.get(aptKey) ?? defaultVisibleAreas(units)
+
+  const toggleArea = (aptKey: string, area: number, units: AptUnit[]) =>
+    setVisibleAreas(prev => {
+      const next = new Map(prev)
+      const cur = new Set(next.get(aptKey) ?? defaultVisibleAreas(units))
+      cur.has(area) ? cur.delete(area) : cur.add(area)
+      next.set(aptKey, cur)
+      return next
+    })
+
+  const showAllAreas = (aptKey: string, units: AptUnit[]) =>
+    setVisibleAreas(prev => {
+      const next = new Map(prev)
+      next.set(aptKey, new Set(units.map(u => u.area)))
+      return next
+    })
 
   const toggleGroup = (key: string) =>
     setExpandedGroups(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
@@ -222,6 +323,48 @@ export function AptTable({ results, onRemove, onRemoveGroup }: Props) {
 
   let globalRow = 1
 
+  // 단지 행 + (평형 칩) + 평형별 행 렌더링 (단일 그룹/다중 그룹 공용)
+  const renderAptBlock = (result: AptResult, topLevel: boolean, onRemoveFn: () => void) => {
+    const aptKey = `${result.dongCode}-${result.aptName}`
+    const isAptExpanded = expandedApts.has(aptKey)
+    const aptRowNum = globalRow++
+    const showChips = isAptExpanded && result.units.length > 3
+    const visible = getVisible(aptKey, result.units)
+    const filteredUnits = isAptExpanded ? result.units.filter(u => visible.has(u.area)) : []
+    if (isAptExpanded) globalRow += (showChips ? 1 : 0) + filteredUnits.length
+    let rowCursor = aptRowNum
+    return (
+      <React.Fragment key={aptKey}>
+        <AptRow
+          result={result}
+          rowNum={aptRowNum}
+          expanded={isAptExpanded}
+          topLevel={topLevel}
+          onToggle={() => toggleApt(aptKey)}
+          onRemove={onRemoveFn}
+        />
+        {showChips && (
+          <AreaChipsRow
+            rowNum={++rowCursor}
+            units={result.units}
+            exclusiveRatio={result.exclusiveRatio}
+            visible={visible}
+            onToggleArea={area => toggleArea(aptKey, area, result.units)}
+            onShowAll={() => showAllAreas(aptKey, result.units)}
+          />
+        )}
+        {filteredUnits.map(unit => (
+          <UnitRow
+            key={`${aptKey}-${unit.area}`}
+            unit={unit}
+            rowNum={++rowCursor}
+            exclusiveRatio={result.exclusiveRatio}
+          />
+        ))}
+      </React.Fragment>
+    )
+  }
+
   return (
     <div className="xl-sheet">
       <table className="xl-table" style={{ width: '100%' }}>
@@ -259,31 +402,7 @@ export function AptTable({ results, onRemove, onRemoveGroup }: Props) {
           {groups.map(group => {
             // 단지가 1개뿐인 그룹: 그룹 행 없이 단지 행 + 평형별 행을 바로 표시
             if (group.items.length === 1) {
-              const result = group.items[0]
-              const aptKey = `${result.dongCode}-${result.aptName}`
-              const isAptExpanded = expandedApts.has(aptKey)
-              const aptRowNum = globalRow++
-              if (isAptExpanded) result.units.forEach(() => globalRow++)
-              return (
-                <React.Fragment key={group.groupKey}>
-                  <AptRow
-                    result={result}
-                    rowNum={aptRowNum}
-                    expanded={isAptExpanded}
-                    topLevel
-                    onToggle={() => toggleApt(aptKey)}
-                    onRemove={() => onRemoveGroup(group.searchTerm, group.dongCode)}
-                  />
-                  {isAptExpanded && result.units.map((unit, i) => (
-                    <UnitRow
-                      key={`${aptKey}-${unit.area}`}
-                      unit={unit}
-                      rowNum={aptRowNum + i + 1}
-                      exclusiveRatio={result.exclusiveRatio}
-                    />
-                  ))}
-                </React.Fragment>
-              )
+              return renderAptBlock(group.items[0], true, () => onRemoveGroup(group.searchTerm, group.dongCode))
             }
 
             const isGroupExpanded = expandedGroups.has(group.groupKey)
@@ -301,31 +420,9 @@ export function AptTable({ results, onRemove, onRemoveGroup }: Props) {
                   onToggle={() => toggleGroup(group.groupKey)}
                   onRemove={() => onRemoveGroup(group.searchTerm, group.dongCode)}
                 />
-                {isGroupExpanded && group.items.map(result => {
-                  const aptKey = `${result.dongCode}-${result.aptName}`
-                  const isAptExpanded = expandedApts.has(aptKey)
-                  const aptRowNum = globalRow++
-                  if (isAptExpanded) result.units.forEach(() => globalRow++)
-                  return (
-                    <React.Fragment key={aptKey}>
-                      <AptRow
-                        result={result}
-                        rowNum={aptRowNum}
-                        expanded={isAptExpanded}
-                        onToggle={() => toggleApt(aptKey)}
-                        onRemove={() => onRemove(result.aptName, result.dongCode)}
-                      />
-                      {isAptExpanded && result.units.map((unit, i) => (
-                        <UnitRow
-                          key={`${aptKey}-${unit.area}`}
-                          unit={unit}
-                          rowNum={aptRowNum + i + 1}
-                          exclusiveRatio={result.exclusiveRatio}
-                        />
-                      ))}
-                    </React.Fragment>
-                  )
-                })}
+                {isGroupExpanded && group.items.map(result =>
+                  renderAptBlock(result, false, () => onRemove(result.aptName, result.dongCode))
+                )}
               </React.Fragment>
             )
           })}

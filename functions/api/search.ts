@@ -1,4 +1,5 @@
 // functions/api/search.ts
+import { matchDeals } from './_match'
 // KV 캐시 전략:
 //   - 과거 월 데이터: 영구 캐시 (MOLIT 확정 데이터는 변경 없음)
 //   - 당월 데이터: 1시간 TTL (신고 지연분 반영)
@@ -138,34 +139,16 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   )
   const allDeals = results.flat()
 
-  // 이름 정규화: 공백·"아파트" 접미사·괄호 반복 표기 제거
-  // MOLIT은 "래미안퍼스티지(래미안퍼스티지)" 같은 형식 사용
-  const normalize = (s: string) =>
-    s.replace(/\s/g, '')
-     .replace(/\([^)]*\)/g, '')   // (괄호 내용) 제거
-     .replace(/아파트$/, '')
-     .toLowerCase()
+  const aptDeals = matchDeals(allDeals, aptName)
 
-  const normTarget = normalize(aptName)
-
-  // MOLIT 이름에서 뒤쪽 차수/단지 번호 제거한 기본명
-  // 예: "현대1차" → "현대", "신현대2단지" → "신현대"
-  const stripSuffix = (s: string) => s.replace(/\d+[차단지동블럭호]?$/, '').replace(/\d+$/, '')
-
-  const aptDeals = allDeals.filter(d => {
-    const n = normalize(d.aptNm ?? '')
-    if (!n) return false
-    if (n === normTarget) return true
-    if (n.includes(normTarget)) return true           // MOLIT이 뒤에 접미사 추가 (예: "1단지")
-    if (n.length >= 3 && normTarget.includes(n)) return true   // MOLIT이 지역명 없이 저장 (예: "신현대")
-    // 차수 번호 제거 후 지역명 접두사 없이 저장된 경우 (예: "현대1차" → "현대", "압구정현대".endsWith("현대"))
-    const nBase = stripSuffix(n)
-    if (nBase.length >= 2 && normTarget.endsWith(nBase)) return true
-    return false
-  })
+  // 진단용: debug=1 이면 이 동의 실제 단지명 목록도 함께 반환
+  const body: Record<string, unknown> = { aptName, dongCode, deals: aptDeals }
+  if (url.searchParams.get('debug') === '1') {
+    body.names = [...new Set(allDeals.map(d => d.aptNm))].sort()
+  }
 
   return new Response(
-    JSON.stringify({ aptName, dongCode, deals: aptDeals }),
+    JSON.stringify(body),
     { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
   )
 }

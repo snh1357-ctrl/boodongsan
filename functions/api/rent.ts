@@ -1,4 +1,5 @@
 // functions/api/rent.ts
+import { matchDeals } from './_match'
 // 아파트 전월세 실거래 조회 (RTMSDataSvcAptRent)
 // KV 캐시: `r:{dongCode}:{ym}` — 과거 월 영구, 당월 1시간 TTL (search.ts와 동일 전략)
 
@@ -114,22 +115,8 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   )
   const allRents = results.flat()
 
-  // search.ts와 동일한 이름 매칭 규칙
-  const normalize = (s: string) =>
-    s.replace(/\s/g, '').replace(/\([^)]*\)/g, '').replace(/아파트$/, '').toLowerCase()
-  const stripSuffix = (s: string) => s.replace(/\d+[차단지동블럭호]?$/, '').replace(/\d+$/, '')
-  const normTarget = normalize(aptName)
-
-  const rents = allRents.filter(d => {
-    const n = normalize(d.aptNm ?? '')
-    if (!n) return false
-    if (n === normTarget) return true
-    if (n.includes(normTarget)) return true
-    if (n.length >= 3 && normTarget.includes(n)) return true
-    const nBase = stripSuffix(n)
-    if (nBase.length >= 2 && normTarget.endsWith(nBase)) return true
-    return false
-  })
+  // search.ts와 동일한 단계적 이름 매칭 (공용 로직)
+  const rents = matchDeals(allRents, aptName)
 
   return new Response(
     JSON.stringify({ aptName, dongCode, rents }),
