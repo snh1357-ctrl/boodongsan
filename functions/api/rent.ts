@@ -40,6 +40,13 @@ function getXml(xml: string, tag: string): string {
   return match ? match[1].trim() : ''
 }
 
+// MOLIT는 오류(호출 한도 초과 등)도 HTTP 200 + 오류 XML로 반환하므로 resultCode 검사 필수
+function checkResultCode(text: string): string | null {
+  const code = getXml(text, 'resultCode')
+  if (code === '' || code === '00' || code === '000') return null
+  return `${code} ${getXml(text, 'resultMsg')}`.trim()
+}
+
 function parseItems(text: string): RentItem[] {
   const items: RentItem[] = []
   for (const m of text.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
@@ -57,23 +64,28 @@ function parseItems(text: string): RentItem[] {
   return items
 }
 
-async function fetchMonthFromMolit(apiKey: string, dongCode: string, ym: string): Promise<RentItem[]> {
+async function fetchMonthFromMolit(apiKey: string, dongCode: string, ym: string): Promise<RentItem[] | null> {
   try {
     const base = `${BASE_URL}?serviceKey=${apiKey}&LAWD_CD=${dongCode}&DEAL_YMD=${ym}&numOfRows=1000`
     const res = await fetch(`${base}&pageNo=1`)
-    if (!res.ok) return []
+    if (!res.ok) return null
     const text = await res.text()
+    if (checkResultCode(text)) return null
     const items = parseItems(text)
     const totalPages = Math.ceil(parseInt(getXml(text, 'totalCount') || '0') / 1000)
     if (totalPages <= 1) return items
     const extras = await Promise.all(
       Array.from({ length: totalPages - 1 }, (_, i) =>
-        fetch(`${base}&pageNo=${i + 2}`).then(r => r.text()).then(parseItems).catch(() => [] as RentItem[])
+        fetch(`${base}&pageNo=${i + 2}`).then(r => r.text()).then(t => {
+          if (checkResultCode(t)) throw new Error('page error')
+          return parseItems(t)
+        })
       )
-    )
+    ).catch(() => null)
+    if (extras === null) return null
     return [...items, ...extras.flat()]
   } catch {
-    return []
+    return null
   }
 }
 
@@ -84,12 +96,14 @@ async function getMonthData(
   ym: string,
   waitUntil: (p: Promise<unknown>) => void,
 ): Promise<RentItem[]> {
-  const cacheKey = `r:${dongCode}:${ym}`
+  const cacheKey = `r2:${dongCode}:${ym}`  // v2: API 오류 캐시 오염 수정하며 무효화
   if (kv) {
     const cached = await kv.get<RentItem[]>(cacheKey, 'json')
     if (cached !== null) return cached
   }
   const data = await fetchMonthFromMolit(apiKey, dongCode, ym)
+  // 성공한 응답만 캐시 (실패를 빈 값으로 캐시하면 오염됨)
+  if (data === null) return []
   if (kv) {
     const opts = ym >= currentYm() ? { expirationTtl: 3600 } : undefined
     waitUntil(kv.put(cacheKey, JSON.stringify(data), opts).catch(() => {}))
@@ -101,7 +115,8 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   const url      = new URL(context.request.url)
   const dongCode = url.searchParams.get('dongCode')
   const aptName  = url.searchParams.get('aptName')
-  const months   = Math.min(parseInt(url.searchParams.get('months') || '12'), 24)
+  // 서브요청 한도(월당 최대 3개) 때문에 12개월로 제한
+  const months   = Math.min(parseInt(url.searchParams.get('months') || '12'), 12)
 
   if (!dongCode || !aptName) {
     return new Response(JSON.stringify({ error: 'dongCode and aptName required' }), { status: 400 })

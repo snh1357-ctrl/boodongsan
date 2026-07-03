@@ -23,6 +23,12 @@ function getXml(xml: string, tag: string): string {
   return m ? m[1].trim() : ''
 }
 
+// MOLIT는 오류(호출 한도 초과 등)도 HTTP 200 + 오류 XML로 반환하므로 resultCode 검사 필수
+function isApiError(text: string): boolean {
+  const code = getXml(text, 'resultCode')
+  return !(code === '' || code === '00' || code === '000')
+}
+
 interface BasisInfo {
   useDate: string | null        // 사용승인일 (YYYYMMDD)
   exclusiveRatio: number | null // 전용률 = 전용면적합(privArea) ÷ 관리비부과면적(kaptMarea)
@@ -36,6 +42,7 @@ async function fetchParkingCnt(apiKey: string, kaptCode: string): Promise<number
     const res = await fetch(`${DETAIL_URL}?serviceKey=${apiKey}&kaptCode=${kaptCode}`)
     if (!res.ok) return null
     const text = await res.text()
+    if (isApiError(text)) return null
     const ground = parseInt(getXml(text, 'kaptdPcnt')) || 0
     const under  = parseInt(getXml(text, 'kaptdPcntu')) || 0
     const total = ground + under
@@ -54,6 +61,7 @@ async function fetchBasisInfo(apiKey: string, kaptCode: string): Promise<BasisIn
     ])
     if (!res.ok) return null
     const text = await res.text()
+    if (isApiError(text)) return null
     const marea = parseFloat(getXml(text, 'kaptMarea'))    // 관리비부과면적 ≈ 공급면적 합
     const priv  = parseFloat(getXml(text, 'privArea'))     // 전용면적 합
     let ratio: number | null = null
@@ -94,6 +102,7 @@ async function fetchAptList(apiKey: string, sigunguCd: string): Promise<KaptItem
     const res = await fetch(`${base}&pageNo=1`)
     if (!res.ok) return []
     const text = await res.text()
+    if (isApiError(text)) return []
     const items = parseKaptItems(text)
 
     // 페이지가 더 있으면 추가 조회
@@ -127,7 +136,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   }
 
   const kv = context.env.APT_CACHE
-  const cacheKey = `aptlist2:${dongCode}`  // v2: getSigunguAptList로 교체하며 캐시 무효화
+  const cacheKey = `aptlist3:${dongCode}`  // v3: API 오류 캐시 오염 수정하며 무효화
 
   // KV 캐시 조회 (24시간 TTL)
   let list: KaptItem[] | null = null
@@ -152,7 +161,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
 
   // 기본정보(전용률·사용승인일) 조회 — kaptCode 단위로 30일 캐시
   let basis: BasisInfo | null = null
-  const basisCacheKey = `basis2:${match.kaptCode}`  // v2: 주차대수 추가하며 캐시 무효화
+  const basisCacheKey = `basis3:${match.kaptCode}`  // v3: API 오류 캐시 오염 수정하며 무효화
   if (kv) basis = await kv.get<BasisInfo>(basisCacheKey, 'json')
   if (!basis) {
     basis = await fetchBasisInfo(context.env.MOLIT_API_KEY, match.kaptCode)

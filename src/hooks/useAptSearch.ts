@@ -78,26 +78,30 @@ interface SearchState {
 const currentYear = new Date().getFullYear()
 const ATH_START_YEAR = 2012
 
-function athChunks(): [number, number][] {
-  const endYear = currentYear - 1
-  if (ATH_START_YEAR > endYear) return []
-  const chunks: [number, number][] = []
-  for (let y = ATH_START_YEAR; y <= endYear; y += 4) {
-    chunks.push([y, Math.min(y + 3, endYear)])
-  }
-  return chunks
+// ATH 조회 대상 연도 (최근 2개년은 Phase 1에서 조회)
+function athYears(): number[] {
+  const years: number[] = []
+  for (let y = ATH_START_YEAR; y <= currentYear - 2; y++) years.push(y)
+  return years
 }
 
 function loadSavedResults(): AptResult[] {
   try { return JSON.parse(localStorage.getItem('apt_results') || '[]') } catch { return [] }
 }
 
-async function fetchChunk(dongCode: string, aptName: string, fromYear: number, toYear: number): Promise<RawDeal[]> {
-  const url = `/api/search?dongCode=${encodeURIComponent(dongCode)}&aptName=${encodeURIComponent(aptName)}&fromYear=${fromYear}&toYear=${toYear}`
-  const res = await fetch(url, { cache: 'no-store' })
-  if (!res.ok) return []
-  const data = await res.json() as { deals: RawDeal[] }
-  return data.deals ?? []
+interface YearResult { deals: RawDeal[]; apiError?: string }
+
+// 1년 단위 조회 (서버가 Cloudflare 서브요청 한도 때문에 요청당 12개월로 제한)
+async function fetchYear(dongCode: string, aptName: string, year: number): Promise<YearResult> {
+  try {
+    const url = `/api/search?dongCode=${encodeURIComponent(dongCode)}&aptName=${encodeURIComponent(aptName)}&fromYear=${year}&toYear=${year}`
+    const res = await fetch(url, { cache: 'no-store' })
+    if (!res.ok) return { deals: [], apiError: `HTTP ${res.status}` }
+    const data = await res.json() as { deals: RawDeal[]; apiError?: string }
+    return { deals: data.deals ?? [], apiError: data.apiError }
+  } catch {
+    return { deals: [], apiError: '네트워크 오류' }
+  }
 }
 
 function buildResults(deals: RawDeal[], searchTerm: string, dongCode: string, athLoaded: boolean): AptResult[] {
@@ -204,31 +208,39 @@ export function useAptSearch() {
     setState(prev => ({ ...prev, loading: true, loadingAth: false, error: null, pending: [], noResult: null }))
 
     try {
-      // ATH 전체 기간 조회를 최근 거래 조회와 동시에 시작 (대기 시간 단축)
+      // ATH 전체 기간 조회(연 단위 병렬)를 최근 거래 조회와 동시에 시작
       const athPromise = Promise.all(
-        athChunks().map(([from, to]) => fetchChunk(dongCode, aptName, from, to))
+        athYears().map(y => fetchYear(dongCode, aptName, y))
       )
 
-      // Phase 1: 최근 12개월
-      let recentDeals = await fetchChunk(dongCode, aptName, currentYear - 1, currentYear)
-
-      // fallback: 최근 5년
-      if (recentDeals.length === 0) {
-        recentDeals = await fetchChunk(dongCode, aptName, currentYear - 5, currentYear - 2)
-      }
+      // Phase 1: 최근 2개년
+      const recent = await Promise.all([
+        fetchYear(dongCode, aptName, currentYear),
+        fetchYear(dongCode, aptName, currentYear - 1),
+      ])
+      const recentDeals = recent.flatMap(r => r.deals)
+      let apiError = recent.map(r => r.apiError).find(Boolean)
 
       let newPending = buildResults(recentDeals, aptName, dongCode, false)
       let athDone = false
 
-      // 최근 5년 거래가 없으면 전체 기간(2012~)에서 확인
+      // 최근 2년 거래가 없으면 전체 기간(2012~)에서 확인
       if (newPending.length === 0) {
-        const chunkDeals = await athPromise
-        const allDeals = dedupeDeals([...recentDeals, ...chunkDeals.flat()])
+        const chunks = await athPromise
+        apiError = apiError ?? chunks.map(c => c.apiError).find(Boolean)
+        const allDeals = dedupeDeals([...recentDeals, ...chunks.flatMap(c => c.deals)])
         newPending = buildResults(allDeals, aptName, dongCode, true)
         athDone = true
-        // 전체 기간에도 거래가 없음 → 명시적 피드백 (신축·전매제한 등)
         if (newPending.length === 0) {
-          setState(prev => ({ ...prev, loading: false, loadingAth: false, pending: [], noResult: aptName }))
+          // API 오류(호출 한도 초과 등)와 진짜 거래 없음을 구분해서 표시
+          if (apiError) {
+            setState(prev => ({
+              ...prev, loading: false, loadingAth: false, pending: [],
+              error: `국토부 API 오류로 조회하지 못했습니다 (${apiError}). 잠시 후 다시 시도해 주세요.`,
+            }))
+          } else {
+            setState(prev => ({ ...prev, loading: false, loadingAth: false, pending: [], noResult: aptName }))
+          }
           return
         }
       }
@@ -275,7 +287,7 @@ export function useAptSearch() {
     dongCode: string,
     aptName: string,
     recentDeals: RawDeal[],
-    athPromise: Promise<RawDeal[][]>,
+    athPromise: Promise<YearResult[]>,
   ) {
     const finish = (athResults: AptResult[]) => {
       setState(prev => {
@@ -317,8 +329,8 @@ export function useAptSearch() {
     }
 
     athPromise
-      .then(chunkDeals => {
-        const allDeals = dedupeDeals([...recentDeals, ...chunkDeals.flat()])
+      .then(chunks => {
+        const allDeals = dedupeDeals([...recentDeals, ...chunks.flatMap(c => c.deals)])
         finish(buildResults(allDeals, aptName, dongCode, true))
       })
       .catch(() => setState(prev => ({ ...prev, loadingAth: false })))

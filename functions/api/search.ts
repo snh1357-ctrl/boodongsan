@@ -46,12 +46,28 @@ function getXml(xml: string, tag: string): string {
   return match ? match[1].trim() : ''
 }
 
-async function fetchMonthFromMolit(apiKey: string, dongCode: string, ym: string): Promise<MolitItem[]> {
+interface MonthResult {
+  items: MolitItem[] | null  // null = 조회 실패 (캐시 금지)
+  error?: string
+}
+
+// MOLIT는 오류(호출 한도 초과 등)도 HTTP 200 + 오류 XML로 반환하므로
+// resultCode를 반드시 검사해야 함. 실패는 '거래 0건'과 구분해 null로 반환.
+function checkResultCode(text: string): string | null {
+  const code = getXml(text, 'resultCode')
+  if (code === '' || code === '00' || code === '000') return null
+  return `${code} ${getXml(text, 'resultMsg')}`.trim()
+}
+
+async function fetchMonthFromMolit(apiKey: string, dongCode: string, ym: string): Promise<MonthResult> {
   try {
     const base = `${BASE_URL}?serviceKey=${apiKey}&LAWD_CD=${dongCode}&DEAL_YMD=${ym}&numOfRows=1000`
     const res = await fetch(`${base}&pageNo=1`)
-    if (!res.ok) return []
+    if (!res.ok) return { items: null, error: `HTTP ${res.status}` }
     const text = await res.text()
+
+    const apiError = checkResultCode(text)
+    if (apiError) return { items: null, error: apiError }
 
     const parse = (t: string): MolitItem[] => {
       const items: MolitItem[] = []
@@ -76,16 +92,21 @@ async function fetchMonthFromMolit(apiKey: string, dongCode: string, ym: string)
     const items = parse(text)
     const totalPages = Math.ceil(parseInt(getXml(text, 'totalCount') || '0') / 1000)
 
-    if (totalPages <= 1) return items
+    if (totalPages <= 1) return { items }
 
+    // 추가 페이지 실패 시 전체를 실패 처리 (부분 데이터 영구 캐시 방지)
     const extras = await Promise.all(
       Array.from({ length: totalPages - 1 }, (_, i) =>
-        fetch(`${base}&pageNo=${i + 2}`).then(r => r.text()).then(parse).catch(() => [] as MolitItem[])
+        fetch(`${base}&pageNo=${i + 2}`).then(r => r.text()).then(t => {
+          if (checkResultCode(t)) throw new Error('page error')
+          return parse(t)
+        })
       )
-    )
-    return [...items, ...extras.flat()]
-  } catch {
-    return []
+    ).catch(() => null)
+    if (extras === null) return { items: null, error: 'pagination failed' }
+    return { items: [...items, ...extras.flat()] }
+  } catch (e) {
+    return { items: null, error: e instanceof Error ? e.message : 'fetch failed' }
   }
 }
 
@@ -95,28 +116,27 @@ async function getMonthData(
   dongCode: string,
   ym: string,
   waitUntil: (p: Promise<unknown>) => void,
-): Promise<MolitItem[]> {
-  const cacheKey = `m2:${dongCode}:${ym}`  // v2: 해제거래 필터 추가하며 캐시 무효화
+): Promise<MonthResult> {
+  const cacheKey = `m3:${dongCode}:${ym}`  // v3: API 오류가 빈 값으로 캐시되던 문제 수정하며 무효화
 
   // KV 캐시 조회
   if (kv) {
     const cached = await kv.get<MolitItem[]>(cacheKey, 'json')
-    if (cached !== null) return cached
+    if (cached !== null) return { items: cached }
   }
 
   // MOLIT API 호출
-  const data = await fetchMonthFromMolit(apiKey, dongCode, ym)
+  const result = await fetchMonthFromMolit(apiKey, dongCode, ym)
 
-  // KV에 저장
-  if (kv) {
+  // 성공한 응답만 KV에 저장 (실패를 빈 값으로 캐시하면 이후 조회가 전부 오염됨)
+  if (kv && result.items !== null) {
     const isCurrent = ym >= currentYm()
     // 당월: 1시간 TTL, 과거: 영구 저장 (변경 없는 확정 데이터)
     const opts = isCurrent ? { expirationTtl: 3600 } : undefined
-    // waitUntil: 응답 반환 후에도 KV 쓰기가 완료되도록 보장 (캐시 유실 방지)
-    waitUntil(kv.put(cacheKey, JSON.stringify(data), opts).catch(() => {}))
+    waitUntil(kv.put(cacheKey, JSON.stringify(result.items), opts).catch(() => {}))
   }
 
-  return data
+  return result
 }
 
 export const onRequestGet: PagesFunction<Env> = async (context) => {
@@ -131,20 +151,25 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   }
 
   const kv = context.env.APT_CACHE  // 바인딩 없으면 undefined
-  const months = generateMonths(fromYear, toYear).slice(-45)  // Worker 서브요청 50개 한도
+  // Cloudflare 무료 플랜 서브요청 50개/요청 한도:
+  // 콜드 캐시 시 월당 최대 3 서브요청(KV get + fetch + KV put)이므로 12개월로 제한
+  const months = generateMonths(fromYear, toYear).slice(-12)
 
   // 모든 월을 병렬로 조회 (캐시 히트 시 MOLIT API 호출 없음 → 즉시 응답)
   const results = await Promise.all(
     months.map(ym => getMonthData(kv, context.env.MOLIT_API_KEY, dongCode, ym, p => context.waitUntil(p)))
   )
-  const allDeals = results.flat()
+  const allDeals = results.flatMap(r => r.items ?? [])
+  const apiError = results.find(r => r.error)?.error
 
   const aptDeals = matchDeals(allDeals, aptName)
 
   // 진단용: debug=1 이면 이 동의 실제 단지명 목록도 함께 반환
   const body: Record<string, unknown> = { aptName, dongCode, deals: aptDeals }
+  if (apiError) body.apiError = apiError
   if (url.searchParams.get('debug') === '1') {
     body.names = [...new Set(allDeals.map(d => d.aptNm))].sort()
+    body.monthsQueried = months
   }
 
   return new Response(
