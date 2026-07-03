@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parsePrice, dealDate, aggregateByArea } from './aggregate'
+import { parsePrice, dealDate, aggregateByArea, dedupeDeals } from './aggregate'
 import type { RawDeal } from '../types'
 
 const makeDeal = (overrides: Partial<RawDeal>): RawDeal => ({
@@ -25,6 +25,22 @@ describe('dealDate', () => {
   it('RawDeal에서 YYYY-MM-DD 문자열 생성', () => {
     expect(dealDate(makeDeal({ dealYear: '2024', dealMonth: '3', dealDay: '5' }))).toBe('2024-03-05')
     expect(dealDate(makeDeal({ dealYear: '2021', dealMonth: '12', dealDay: '31' }))).toBe('2021-12-31')
+  })
+})
+
+describe('dedupeDeals', () => {
+  it('기간이 겹치게 조회된 동일 거래를 제거', () => {
+    const d = makeDeal({ dealAmount: '100,000' })
+    expect(dedupeDeals([d, { ...d }])).toHaveLength(1)
+  })
+
+  it('가격·층·날짜가 다르면 유지', () => {
+    const deals = [
+      makeDeal({ floor: '10' }),
+      makeDeal({ floor: '11' }),
+      makeDeal({ dealDay: '2' }),
+    ]
+    expect(dedupeDeals(deals)).toHaveLength(3)
   })
 })
 

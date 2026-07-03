@@ -8,6 +8,17 @@ export function dealDate(d: RawDeal): string {
   return `${d.dealYear}-${String(+d.dealMonth).padStart(2, '0')}-${String(+d.dealDay).padStart(2, '0')}`
 }
 
+// 여러 기간을 겹쳐 조회할 때 생기는 중복 거래 제거
+export function dedupeDeals(deals: RawDeal[]): RawDeal[] {
+  const seen = new Set<string>()
+  return deals.filter(d => {
+    const k = `${d.aptNm}|${d.dealYear}-${d.dealMonth}-${d.dealDay}|${d.dealAmount}|${d.floor}|${d.excluUseAr}`
+    if (seen.has(k)) return false
+    seen.add(k)
+    return true
+  })
+}
+
 export function aggregateByArea(deals: RawDeal[]): AptUnit[] {
   if (deals.length === 0) return []
 

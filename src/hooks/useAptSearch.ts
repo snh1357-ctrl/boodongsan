@@ -1,15 +1,31 @@
 // src/hooks/useAptSearch.ts
 import { useState, useCallback, useEffect } from 'react'
 import type { AptResult, RawDeal } from '../types'
-import { aggregateByArea } from '../lib/aggregate'
+import { aggregateByArea, dedupeDeals } from '../lib/aggregate'
 
-async function fetchHouseHoldCnt(aptName: string, dongCode: string): Promise<number | null> {
+interface AptInfo {
+  houseHoldCnt: number | null
+  buildYear: string | null
+  exclusiveRatio: number | null
+}
+
+async function fetchAptInfo(aptName: string, dongCode: string): Promise<AptInfo | null> {
   try {
     const url = `/api/apt-info?aptName=${encodeURIComponent(aptName)}&dongCode=${encodeURIComponent(dongCode)}`
     const res = await fetch(url)
     if (!res.ok) return null
-    const data = await res.json() as { found: boolean; houseHoldCnt?: number }
-    return data.found ? (data.houseHoldCnt ?? null) : null
+    const data = await res.json() as {
+      found: boolean
+      houseHoldCnt?: number | null
+      buildYear?: string | null
+      exclusiveRatio?: number | null
+    }
+    if (!data.found) return null
+    return {
+      houseHoldCnt: data.houseHoldCnt ?? null,
+      buildYear: data.buildYear ?? null,
+      exclusiveRatio: data.exclusiveRatio ?? null,
+    }
   } catch {
     return null
   }
@@ -97,33 +113,47 @@ export function useAptSearch() {
     try { localStorage.setItem('apt_results', JSON.stringify(state.results)) } catch {}
   }, [state.results])
 
-  // 세대수 조회 후 results에 반영
-  const loadHouseHoldCnt = useCallback((aptName: string, dongCode: string) => {
-    fetchHouseHoldCnt(aptName, dongCode).then(cnt => {
-      if (cnt === null) return
+  // 단지 정보(세대수·연식·전용률) 조회 후 results에 반영
+  const loadAptInfo = useCallback((aptName: string, dongCode: string) => {
+    fetchAptInfo(aptName, dongCode).then(info => {
+      if (info === null) return
       setState(prev => ({
         ...prev,
         results: prev.results.map(r =>
-          r.aptName === aptName && r.dongCode === dongCode ? { ...r, houseHoldCnt: cnt } : r
+          r.aptName === aptName && r.dongCode === dongCode
+            ? {
+                ...r,
+                houseHoldCnt: info.houseHoldCnt ?? r.houseHoldCnt,
+                buildYear: r.buildYear ?? info.buildYear ?? undefined,
+                exclusiveRatio: info.exclusiveRatio ?? r.exclusiveRatio,
+              }
+            : r
         ),
       }))
     })
   }, [])
 
+  // localStorage에서 복원된 결과 중 단지 정보가 없는 항목 보강 (최초 1회)
+  useEffect(() => {
+    const missing = loadSavedResults().filter(r => r.houseHoldCnt == null || r.exclusiveRatio == null)
+    missing.forEach(r => loadAptInfo(r.aptName, r.dongCode))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const search = useCallback(async ({ dongCode, aptName }: SearchParams) => {
     setState(prev => ({ ...prev, loading: true, loadingAth: false, error: null, pending: [] }))
 
     try {
+      // ATH 전체 기간 조회를 최근 거래 조회와 동시에 시작 (대기 시간 단축)
+      const athPromise = Promise.all(
+        athChunks().map(([from, to]) => fetchChunk(dongCode, aptName, from, to))
+      )
+
       // Phase 1: 최근 12개월
       let recentDeals = await fetchChunk(dongCode, aptName, currentYear - 1, currentYear)
 
       // fallback: 최근 5년
       if (recentDeals.length === 0) {
-        const [a, b] = await Promise.all([
-          fetchChunk(dongCode, aptName, currentYear - 5, currentYear - 2),
-          fetchChunk(dongCode, aptName, currentYear - 1, currentYear),
-        ])
-        recentDeals = [...a, ...b]
+        recentDeals = await fetchChunk(dongCode, aptName, currentYear - 5, currentYear - 2)
       }
 
       const newPending = buildResults(recentDeals, aptName, dongCode, false)
@@ -144,7 +174,7 @@ export function useAptSearch() {
               : [...prev.results, item],
           }
         })
-        loadHouseHoldCnt(item.aptName, item.dongCode)
+        loadAptInfo(item.aptName, item.dongCode)
       } else {
         setState(prev => ({
           ...prev,
@@ -155,7 +185,7 @@ export function useAptSearch() {
         }))
       }
 
-      loadAth(dongCode, aptName, recentDeals)
+      loadAth(dongCode, aptName, recentDeals, athPromise)
     } catch (e) {
       setState(prev => ({
         ...prev,
@@ -164,11 +194,14 @@ export function useAptSearch() {
         error: e instanceof Error ? e.message : '조회 실패',
       }))
     }
-  }, [loadHouseHoldCnt]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loadAptInfo]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  function loadAth(dongCode: string, aptName: string, recentDeals: RawDeal[]) {
-    const chunks = athChunks()
-
+  function loadAth(
+    dongCode: string,
+    aptName: string,
+    recentDeals: RawDeal[],
+    athPromise: Promise<RawDeal[][]>,
+  ) {
     const finish = (athResults: AptResult[]) => {
       setState(prev => {
         // pending 업데이트 (아직 추가 안 한 것들)
@@ -181,27 +214,26 @@ export function useAptSearch() {
             .filter(r => r.searchTerm === aptName && r.dongCode === dongCode)
             .map(r => r.aptName)
         )
-        const updatedResults = prev.results.map(r =>
-          r.searchTerm === aptName && r.dongCode === dongCode && addedNames.has(r.aptName)
-            ? (athResults.find(a => a.aptName === r.aptName) ?? r)
-            : r
-        )
+        const updatedResults = prev.results.map(r => {
+          if (r.searchTerm !== aptName || r.dongCode !== dongCode || !addedNames.has(r.aptName)) return r
+          const a = athResults.find(a => a.aptName === r.aptName)
+          if (!a) return r
+          // 이미 조회된 단지 정보(세대수·전용률·연식)는 유지
+          return {
+            ...a,
+            houseHoldCnt: r.houseHoldCnt,
+            exclusiveRatio: r.exclusiveRatio,
+            buildYear: a.buildYear ?? r.buildYear,
+          }
+        })
 
         return { ...prev, loadingAth: false, pending: newPending, results: updatedResults }
       })
     }
 
-    if (chunks.length === 0) {
-      setState(prev => {
-        const updated = prev.pending.map(r => ({ ...r, athLoaded: true }))
-        return { ...prev, loadingAth: false, pending: updated }
-      })
-      return
-    }
-
-    Promise.all(chunks.map(([from, to]) => fetchChunk(dongCode, aptName, from, to)))
+    athPromise
       .then(chunkDeals => {
-        const allDeals = [...recentDeals, ...chunkDeals.flat()]
+        const allDeals = dedupeDeals([...recentDeals, ...chunkDeals.flat()])
         finish(buildResults(allDeals, aptName, dongCode, true))
       })
       .catch(() => setState(prev => ({ ...prev, loadingAth: false })))
@@ -220,8 +252,8 @@ export function useAptSearch() {
           : [...prev.results, item],
       }
     })
-    loadHouseHoldCnt(aptName, dongCode)
-  }, [loadHouseHoldCnt])
+    loadAptInfo(aptName, dongCode)
+  }, [loadAptInfo])
 
   // 드랍다운에서 전체 테이블 추가
   const addAllToTable = useCallback(() => {
@@ -241,8 +273,8 @@ export function useAptSearch() {
         ],
       }
     })
-    toFetch.forEach(({ aptName, dongCode }) => loadHouseHoldCnt(aptName, dongCode))
-  }, [loadHouseHoldCnt])
+    toFetch.forEach(({ aptName, dongCode }) => loadAptInfo(aptName, dongCode))
+  }, [loadAptInfo])
 
   // 드랍다운 닫기
   const clearPending = useCallback(() => {

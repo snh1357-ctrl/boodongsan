@@ -1,5 +1,5 @@
 // src/components/AptTable.tsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import type { AptResult, AptUnit } from '../types'
 
 interface Props {
@@ -37,23 +37,28 @@ function toPyeong(area: number): number {
   return Math.round(area / 3.305785)
 }
 
-// 전용면적 → 공급면적 추정 (일반적인 아파트 전용률 ~0.84 기준)
-function toSupply(exclusive: number): number {
-  return Math.round(exclusive / 0.84)
+// 전용면적 → 공급면적 (단지 전용률 우선, 없으면 일반적인 전용률 ~0.78로 추정)
+const DEFAULT_EXCLUSIVE_RATIO = 0.78
+function isValidRatio(ratio?: number): ratio is number {
+  return !!ratio && ratio >= 0.55 && ratio <= 0.98
+}
+function toSupply(exclusive: number, ratio?: number): number {
+  return Math.round(exclusive / (isValidRatio(ratio) ? ratio : DEFAULT_EXCLUSIVE_RATIO))
 }
 
 function NewHighBadge() {
   return <span className="nh-badge">신고가</span>
 }
 
-function UnitRow({ unit, rowNum }: { unit: AptUnit; rowNum: number }) {
-  const supply = toSupply(unit.area)
+function UnitRow({ unit, rowNum, exclusiveRatio }: { unit: AptUnit; rowNum: number; exclusiveRatio?: number }) {
+  const estimated = !isValidRatio(exclusiveRatio)
+  const supply = toSupply(unit.area, exclusiveRatio)
   return (
     <tr className="srow">
       <td className="rnum">{rowNum}</td>
       <td className="cell" style={{ paddingLeft: 48 }}>
-        <span>전용 {unit.area}㎡ ({toPyeong(unit.area)}평)</span>
-        <div className="ext-row">공급 약 {supply}㎡ ({toPyeong(supply)}평)</div>
+        <span>{toPyeong(supply)}평 (공급 {estimated ? '약 ' : ''}{supply}㎡)</span>
+        <div className="ext-row">전용 {unit.area}㎡ ({toPyeong(unit.area)}평)</div>
       </td>
       <td className="cell r">
         <div>{unit.isNewHigh && <NewHighBadge />}{formatPrice(unit.lastDeal.price)}</div>
@@ -93,10 +98,9 @@ function AptRow({
         <span style={{ marginRight: 4 }}>{expanded ? '▾' : '▸'}</span>
         {result.aptName}
         <div className="ext-row">
-          {result.buildYear ? `${result.buildYear}년 준공` : ''}
+          {result.buildYear ? `${result.buildYear}년 준공 (${Math.max(0, new Date().getFullYear() - parseInt(result.buildYear))}년차)` : ''}
           {result.buildYear && result.houseHoldCnt ? ' · ' : ''}
           {result.houseHoldCnt ? `${result.houseHoldCnt.toLocaleString()}세대` : ''}
-          {!result.buildYear && !result.houseHoldCnt ? '' : ''}
         </div>
       </td>
       {summary ? (
@@ -173,6 +177,16 @@ export function AptTable({ results, onRemove, onRemoveGroup }: Props) {
     }
     groups[seen.get(gk)!].items.push(r)
   }
+
+  // 새로 추가된 그룹은 자동 펼침 (한 번 더 클릭하지 않아도 단지명이 바로 보이도록)
+  // 사용자가 직접 접은 그룹은 다시 펼치지 않도록 최초 등장한 그룹만 처리
+  const seenGroupsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const newKeys = groups.map(g => g.groupKey).filter(k => !seenGroupsRef.current.has(k))
+    if (newKeys.length === 0) return
+    newKeys.forEach(k => seenGroupsRef.current.add(k))
+    setExpandedGroups(prev => new Set([...prev, ...newKeys]))
+  }, [results]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 단지가 1개인 그룹: 차수 행 자동 펼침
   useEffect(() => {
@@ -256,6 +270,7 @@ export function AptTable({ results, onRemove, onRemoveGroup }: Props) {
                           key={`${aptKey}-${unit.area}`}
                           unit={unit}
                           rowNum={aptRowNum + i + 1}
+                          exclusiveRatio={result.exclusiveRatio}
                         />
                       ))}
                     </React.Fragment>

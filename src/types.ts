@@ -32,6 +32,7 @@ export interface AptResult {
   athLoaded?: boolean      // ATH 전체 기간 조회 완료 여부
   buildYear?: string       // 건축년도
   houseHoldCnt?: number    // 총 세대수 (AptListService2)
+  exclusiveRatio?: number  // 단지 전용률 (전용면적합 ÷ 관리비부과면적, AptBasisInfoServiceV3)
 }
 
 export interface StockData {

@@ -91,6 +91,7 @@ async function getMonthData(
   apiKey: string,
   dongCode: string,
   ym: string,
+  waitUntil: (p: Promise<unknown>) => void,
 ): Promise<MolitItem[]> {
   const cacheKey = `m:${dongCode}:${ym}`
 
@@ -108,8 +109,8 @@ async function getMonthData(
     const isCurrent = ym >= currentYm()
     // 당월: 1시간 TTL, 과거: 영구 저장 (변경 없는 확정 데이터)
     const opts = isCurrent ? { expirationTtl: 3600 } : undefined
-    // 저장은 응답 후 비동기로 (latency 추가 없음)
-    kv.put(cacheKey, JSON.stringify(data), opts).catch(() => {})
+    // waitUntil: 응답 반환 후에도 KV 쓰기가 완료되도록 보장 (캐시 유실 방지)
+    waitUntil(kv.put(cacheKey, JSON.stringify(data), opts).catch(() => {}))
   }
 
   return data
@@ -131,7 +132,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
 
   // 모든 월을 병렬로 조회 (캐시 히트 시 MOLIT API 호출 없음 → 즉시 응답)
   const results = await Promise.all(
-    months.map(ym => getMonthData(kv, context.env.MOLIT_API_KEY, dongCode, ym))
+    months.map(ym => getMonthData(kv, context.env.MOLIT_API_KEY, dongCode, ym, p => context.waitUntil(p)))
   )
   const allDeals = results.flat()
 
