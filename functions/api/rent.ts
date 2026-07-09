@@ -65,16 +65,19 @@ function parseItems(text: string): RentItem[] {
   return items
 }
 
-async function fetchMonthFromMolit(apiKey: string, dongCode: string, ym: string): Promise<RentItem[] | null> {
+interface MonthResult { items: RentItem[] | null; error?: string }
+
+async function fetchMonthFromMolit(apiKey: string, dongCode: string, ym: string): Promise<MonthResult> {
   try {
     const base = `${BASE_URL}?serviceKey=${apiKey}&LAWD_CD=${dongCode}&DEAL_YMD=${ym}&numOfRows=1000`
     const res = await fetch(`${base}&pageNo=1`)
-    if (!res.ok) return null
+    if (!res.ok) return { items: null, error: `HTTP ${res.status}` }
     const text = await res.text()
-    if (checkResultCode(text)) return null
+    const apiError = checkResultCode(text)
+    if (apiError) return { items: null, error: apiError }
     const items = parseItems(text)
     const totalPages = Math.ceil(parseInt(getXml(text, 'totalCount') || '0') / 1000)
-    if (totalPages <= 1) return items
+    if (totalPages <= 1) return { items }
     const extras = await Promise.all(
       Array.from({ length: totalPages - 1 }, (_, i) =>
         fetch(`${base}&pageNo=${i + 2}`).then(r => r.text()).then(t => {
@@ -83,10 +86,10 @@ async function fetchMonthFromMolit(apiKey: string, dongCode: string, ym: string)
         })
       )
     ).catch(() => null)
-    if (extras === null) return null
-    return [...items, ...extras.flat()]
-  } catch {
-    return null
+    if (extras === null) return { items: null, error: 'pagination failed' }
+    return { items: [...items, ...extras.flat()] }
+  } catch (e) {
+    return { items: null, error: e instanceof Error ? e.message : 'fetch failed' }
   }
 }
 
@@ -97,16 +100,16 @@ async function getMonthData(
   dongCode: string,
   ym: string,
   waitUntil: (p: Promise<unknown>) => void,
-): Promise<RentItem[]> {
+): Promise<MonthResult> {
   const cacheKey = `r2:${dongCode}:${ym}`  // v2: API 오류 캐시 오염 수정하며 무효화
   const ttl = ym >= currentYm() ? 3600 : undefined
   const cached = await cacheGet<RentItem[]>(cache, kv, cacheKey, ttl, waitUntil)
-  if (cached !== null) return cached
-  const data = await fetchMonthFromMolit(apiKey, dongCode, ym)
+  if (cached !== null) return { items: cached }
+  const result = await fetchMonthFromMolit(apiKey, dongCode, ym)
   // 성공한 응답만 캐시 (실패를 빈 값으로 캐시하면 오염됨)
-  if (data === null) return []
-  cachePut(cache, kv, cacheKey, data, ttl, waitUntil)
-  return data
+  if (result.items === null) return { items: [], error: result.error }
+  cachePut(cache, kv, cacheKey, result.items, ttl, waitUntil)
+  return { items: result.items }
 }
 
 export const onRequestGet: PagesFunction<Env> = async (context) => {
@@ -127,13 +130,24 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       getMonthData(cache, kv, context.env.MOLIT_API_KEY, dongCode, ym, p => context.waitUntil(p))
     )
   )
-  const allRents = results.flat()
+  const allRents = results.flatMap(r => r.items ?? [])
+  const apiError = results.find(r => r.error)?.error
 
   // search.ts와 동일한 단계적 이름 매칭 (공용 로직)
   const rents = matchDeals(allRents, aptName)
 
+  // 전세가율이 안 보일 때 원인 파악용:
+  //   apiError 있으면 → 전월세 API 미등록/호출한도 등 (매매와 별개 서비스라 활용신청 필요)
+  //   apiError 없고 rents 0 → 실제 신고분 없음
+  const body: Record<string, unknown> = { aptName, dongCode, rents }
+  if (apiError) body.apiError = apiError
+  if (url.searchParams.get('debug') === '1') {
+    body.names = [...new Set(allRents.map(d => d.aptNm))].sort()
+    body.totalRents = allRents.length
+  }
+
   return new Response(
-    JSON.stringify({ aptName, dongCode, rents }),
+    JSON.stringify(body),
     { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
   )
 }

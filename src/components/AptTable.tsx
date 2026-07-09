@@ -351,9 +351,21 @@ export function AptTable({ results, onRemove, onRemoveGroup }: Props) {
     groups[seen.get(gk)!].items.push(r)
   }
 
-  // 새로 추가된 그룹은 자동 펼침 (한 번 더 클릭하지 않아도 단지명이 바로 보이도록)
-  // 사용자가 직접 접은 그룹은 다시 펼치지 않도록 최초 등장한 그룹만 처리
+  // 새로 추가된 그룹/단지는 자동 펼침, 사용자가 접은 건 다시 펼치지 않음(최초 등장만 처리).
   const seenGroupsRef = useRef<Set<string>>(new Set())
+  const seenAptsRef = useRef<Set<string>>(new Set())
+
+  // 사이트 접속 시(첫 렌더): localStorage에서 복원된 항목은 '이미 본 것'으로만 등록하고
+  // 펼치지 않는다 → 접힌 상태로 유지. 이후 검색으로 새로 추가되는 단지만 자동 펼침.
+  const initedRef = useRef(false)
+  if (!initedRef.current) {
+    initedRef.current = true
+    for (const r of results) {
+      seenGroupsRef.current.add(`${r.searchTerm}__${r.dongCode}`)
+      seenAptsRef.current.add(`${r.dongCode}-${r.aptName}`)
+    }
+  }
+
   useEffect(() => {
     const newKeys = groups.map(g => g.groupKey).filter(k => !seenGroupsRef.current.has(k))
     if (newKeys.length === 0) return
@@ -362,9 +374,6 @@ export function AptTable({ results, onRemove, onRemoveGroup }: Props) {
   }, [results]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 단지가 1개인 그룹: 차수 행 최초 등장 시 1회만 자동 펼침.
-  // (results가 ATH·전세·단지정보 로딩으로 자주 갱신되는데, 매번 펼치면
-  //  사용자가 접어도 다시 펴져버리므로 seenAptsRef로 최초 1회만 처리)
-  const seenAptsRef = useRef<Set<string>>(new Set())
   useEffect(() => {
     const newKeys = groups
       .filter(g => g.items.length === 1)
