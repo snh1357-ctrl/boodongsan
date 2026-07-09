@@ -65,12 +65,12 @@ if (!AUTH) {
   process.exit(1)
 }
 
-const HEADERS = {
-  'authorization': AUTH,
+// 검색은 토큰 없이(공개), 상세정보는 토큰 필요(unauthorized user 방지).
+const BASE_HEADERS = {
   'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36',
-  'referer': 'https://new.land.naver.com/',
   'accept': 'application/json, text/plain, */*',
   'accept-language': 'ko-KR,ko;q=0.9',
+  'referer': 'https://new.land.naver.com/',
   ...(COOKIE ? { cookie: COOKIE } : {}),
 }
 
@@ -78,36 +78,52 @@ const SEARCH_URL = (kw) => `https://new.land.naver.com/api/search?keyword=${enco
 const DETAIL_URL = (no) => `https://new.land.naver.com/api/complexes/${no}?sameAddressGroup=false`
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
+const norm = (s) => String(s || '').replace(/\s/g, '')
 
-async function getJson(url) {
-  const res = await fetch(url, { headers: HEADERS })
+// useAuth=true일 때만 authorization 헤더를 붙인다(상세정보 전용).
+async function getJson(url, useAuth) {
+  const headers = useAuth ? { ...BASE_HEADERS, authorization: AUTH } : BASE_HEADERS
+  const res = await fetch(url, { headers })
+  const text = await res.text()
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return res.json()
+  return { text, data: JSON.parse(text) }
 }
 
-// 이름으로 검색해 complexNo 후보를 얻고, 법정동(emdNm)으로 최대한 일치시킴
-async function resolveComplexNo(name, emdNm) {
-  const data = await getJson(SEARCH_URL(name)).catch(() => null)
+// 이름으로 검색(토큰X)해 complexNo를 얻는다. 시군구코드(cortarNo 앞 5자리)로 매칭.
+async function resolveComplexNo(name, code) {
+  const { data } = await getJson(SEARCH_URL(name), false).catch(() => ({ data: null }))
   if (!data) return null
-  // 응답 구조는 버전에 따라 다를 수 있어 여러 경로를 방어적으로 탐색
-  const list = data.complexes || data.complexList || data.result?.complexes || []
-  if (!Array.isArray(list) || list.length === 0) return null
-  const norm = (s) => String(s || '').replace(/\s/g, '')
-  const dong = norm(emdNm).replace(/[동읍면리]$/, '')
-  // 주소에 법정동이 포함된 후보 우선, 없으면 첫 후보
-  const hit = list.find(c => norm(c.cortarAddress || c.address || c.roadAddress).includes(dong))
-  const chosen = hit || list[0]
-  return chosen?.complexNo || chosen?.complexNumber || chosen?.no || null
+  const list = Array.isArray(data.complexes) ? data.complexes : []
+  if (list.length === 0) return null
+  // 같은 시군구(코드 앞 5자리 일치)만 후보로. 실거래 dongCode == cortarNo 앞 5자리.
+  const cands = list.filter(c => String(c.cortarNo || '').startsWith(code))
+  const pool = cands.length > 0 ? cands : list
+  const n = norm(name)
+  // 이름 일치도: 완전일치 > 서로 포함 > 그외
+  const score = (c) => {
+    const cn = norm(c.complexName)
+    if (cn === n) return 3
+    if (n.includes(cn) || cn.includes(n)) return 2
+    return 1
+  }
+  pool.sort((a, b) => score(b) - score(a))
+  return pool[0]?.complexNo || null
 }
 
-// 단지 상세 → 평형별 [{exclusiveArea, supplyArea}]
+let debugDumped = false
+
+// 단지 상세(토큰O) → 평형별 [{exclusiveArea, supplyArea}]
 async function fetchAreas(complexNo) {
-  const data = await getJson(DETAIL_URL(complexNo)).catch(() => null)
-  if (!data) return null
+  const { text, data } = await getJson(DETAIL_URL(complexNo), true)
+  // 첫 응답 구조를 한 번 저장(필드명 확인용). 문제 시 이 파일을 공유하면 진단 가능.
+  if (!debugDumped) {
+    debugDumped = true
+    try { writeFileSync(resolve(__dirname, 'naver-debug.txt'), text) } catch {}
+  }
   const detail = data.complexPyeongDetailList || data.complexDetail?.complexPyeongDetailList || []
   const out = []
   for (const p of detail) {
-    const exclusiveArea = parseFloat(p.exclusiveArea ?? p.exclusiveSpace ?? p.전용면적)
+    const exclusiveArea = parseFloat(p.exclusiveArea ?? p.exclusiveSpace ?? p.exclusivePyeong ?? p.전용면적)
     const supplyArea = parseFloat(p.supplyArea ?? p.supplySpace ?? p.공급면적)
     if (exclusiveArea > 0 && supplyArea > 0) out.push({ exclusiveArea, supplyArea })
   }
@@ -128,7 +144,7 @@ for (const apt of targets) {
   if (db[key]) { skip++; continue }
   done++
   try {
-    const no = await resolveComplexNo(apt.name, apt.emdNm)
+    const no = await resolveComplexNo(apt.name, apt.code)
     if (!no) { fail++; console.log(`  ✗ ${apt.name} (${apt.emdNm}) — 단지 못 찾음`); await sleep(DELAY); continue }
     const areas = await fetchAreas(no)
     if (!areas) { fail++; console.log(`  ✗ ${apt.name} — 면적 없음 (complexNo ${no})`); await sleep(DELAY); continue }
