@@ -10,8 +10,12 @@ This template provides a minimal setup to get React working in Vite with HMR and
 
 ```bash
 # ⚠ 네이버 접속이 되는 로컬 PC에서만 동작 (클라우드/CI는 네이버가 차단)
-# 브라우저 개발자도구 Network 탭에서 authorization 헤더(Bearer ...)를 복사해 넣으세요.
-NAVER_AUTH="Bearer eyJ..." npm run gen:area -- --limit 50
+# 1) 크롬에서 new.land.naver.com 접속 → 아무 단지 열기 → F12 → Network 탭
+#    → 'complexes' 요청 클릭 → Request Headers의 authorization 값(Bearer ...) 복사
+# 2) scripts/naver-token.txt 파일에 붙여넣고 저장 (git 커밋 제외됨)
+# 3) 실행 (맥/윈도우 공통, 처음엔 50개만 테스트):
+npm run gen:area -- --limit 50
+# 4) 잘 채워지면 public/apt-area.json 커밋·푸시
 ```
 
 자세한 옵션·주의사항은 `scripts/gen-apt-area.mjs` 상단 주석 참고.

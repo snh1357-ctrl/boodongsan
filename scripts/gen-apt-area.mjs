@@ -10,19 +10,23 @@
 //   공급/전용면적을 정확히 제공하므로, 이를 한 번(또는 주기적으로) 수집해 정적
 //   JSON으로 저장하고 앱(src/lib/areaDb.ts)이 조회하도록 합니다.
 //
-// ── 사용법 ──────────────────────────────────────────────────────────
-// 1) 브라우저에서 https://new.land.naver.com 접속 후 로그인 없이 아무 단지나 열기
-// 2) 개발자도구(F12) → Network 탭 → 아무 api/complexes/... 요청 클릭
-//    - Request Headers의 "authorization: Bearer eyJ..." 값을 복사
-// 3) 아래처럼 환경변수로 넣고 실행:
+// ── 사용법 (맥/윈도우 공통) ─────────────────────────────────────────
+// 1) 크롬에서 https://new.land.naver.com 접속 → 아무 아파트 단지 하나 열기
+// 2) F12(개발자도구) → 상단 Network 탭 → 왼쪽 목록에서 'complexes' 들어간
+//    요청 클릭 → 오른쪽 Headers → Request Headers의
+//    "authorization: Bearer eyJ..." 에서 값(Bearer 포함 전체)을 복사
+// 3) scripts/naver-token.txt 파일을 만들어 그 값을 붙여넣고 저장
+// 4) 터미널에서 실행 (처음엔 50개만 테스트):
 //
-//    NAVER_AUTH="Bearer eyJhbGciOi..." node scripts/gen-apt-area.mjs --limit 50
+//    npm run gen:area -- --limit 50
 //
 //    옵션:
 //      --limit N     처리할 단지 수 (기본 전체) — 처음엔 작게 잡아 동작 확인 권장
 //      --code 11680  특정 시군구코드만
 //      --delay 400   요청 간 지연(ms, 기본 400) — 너무 빠르면 차단됩니다
 //      --out PATH    출력 경로 (기본 public/apt-area.json)
+//
+// (환경변수 NAVER_AUTH 로 넣어도 됩니다. 파일보다 우선 적용)
 //
 // 중간 저장/재개: 기존 apt-area.json을 읽어 이어서 채웁니다(이미 수집된 단지는 건너뜀).
 // Naver가 응답 구조를 바꾸면 SEARCH_URL/DETAIL_URL·필드 파싱을 조정하세요.
@@ -46,11 +50,18 @@ const ONLY_CODE = getArg('code', '')
 const DELAY = parseInt(getArg('delay', '400'))
 const OUT = resolve(root, getArg('out', 'public/apt-area.json'))
 
-const AUTH = process.env.NAVER_AUTH || ''
+// 토큰 읽기: ① 환경변수 NAVER_AUTH, 없으면 ② scripts/naver-token.txt 파일
+// (파일 방식이면 OS별 명령 차이가 없어 붙여넣기만 하면 됨. 이 파일은 .gitignore 처리)
+const TOKEN_FILE = resolve(__dirname, 'naver-token.txt')
+let AUTH = process.env.NAVER_AUTH || ''
+if (!AUTH && existsSync(TOKEN_FILE)) AUTH = readFileSync(TOKEN_FILE, 'utf-8').trim()
+if (AUTH && !/^Bearer /i.test(AUTH)) AUTH = `Bearer ${AUTH}`  // 'Bearer ' 빠뜨려도 보정
 const COOKIE = process.env.NAVER_COOKIE || ''
 if (!AUTH) {
-  console.error('❌ NAVER_AUTH 환경변수가 필요합니다. (브라우저 개발자도구에서 authorization 헤더 복사)')
-  console.error('   예) NAVER_AUTH="Bearer eyJ..." node scripts/gen-apt-area.mjs --limit 50')
+  console.error('❌ 네이버 인증 토큰이 없습니다.')
+  console.error('   방법: scripts/naver-token.txt 파일을 만들어 authorization 값을 붙여넣으세요.')
+  console.error('   (크롬 F12 → Network 탭 → api/complexes 요청 → Request Headers의')
+  console.error('    "authorization: Bearer eyJ..." 값 전체를 복사)')
   process.exit(1)
 }
 
