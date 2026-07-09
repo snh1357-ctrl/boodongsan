@@ -131,6 +131,19 @@ async function fetchAreas(complexNo) {
 }
 
 // ── 실행 ──
+console.log('=== gen-apt-area v3 (검색 무인증 + 진단) ===')
+
+// 시작 시 검색 API 연결 테스트 — 이 한 줄로 원인을 바로 진단한다.
+try {
+  const r = await fetch(SEARCH_URL('은마아파트'), { headers: BASE_HEADERS })
+  const t = await r.text()
+  console.log(`[검색테스트] HTTP ${r.status} · 응답길이 ${t.length} · complexNo 포함:${t.includes('complexNo')}`)
+  try { writeFileSync(resolve(__dirname, 'naver-debug.txt'), `SEARCH TEST status=${r.status}\n\n${t.slice(0, 2000)}`) } catch {}
+} catch (e) {
+  console.log(`[검색테스트] fetch 실패: ${e.message}`)
+  console.log('  → 네이버가 Node(프로그램) 접근을 차단한 것일 수 있습니다.')
+}
+
 const index = JSON.parse(readFileSync(resolve(root, 'public/apt-index.json'), 'utf-8'))
 const db = existsSync(OUT) ? JSON.parse(readFileSync(OUT, 'utf-8')) : {}
 
