@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import type { AptResult, AptUnit } from '../types'
 import bjdongData from '../data/bjdong.json'
+import { loadAreaDb, lookupSupply } from '../lib/areaDb'
 
 // 시군구코드(5자리) → "시도 시군구" 지역명 (지도 검색어 구성용)
 const regionByCode = new Map<string, string>()
@@ -52,12 +53,23 @@ function toPyeong(area: number): number {
   return Math.round(area / 3.305785)
 }
 
-// 전용면적 → 공급면적 (단지 전용률 우선, 없으면 일반적인 전용률 ~0.78로 추정)
+// 전용면적 → 공급면적
+// 우선순위: ① 정적 DB(네이버 수집)의 실측 공급면적 → ② 단지 전용률 역산 → ③ 기본 전용률(0.78) 추정
 const DEFAULT_EXCLUSIVE_RATIO = 0.78
 function isValidRatio(ratio?: number): ratio is number {
   return !!ratio && ratio >= 0.55 && ratio <= 0.98
 }
-function toSupply(exclusive: number, ratio?: number): number {
+interface AptKey { dongCode: string; aptName: string }
+// DB에 실측 공급면적이 있으면 추정이 아님(estimated=false)
+function supplyIsEstimated(exclusive: number, ratio?: number, key?: AptKey): boolean {
+  if (key && lookupSupply(key.dongCode, key.aptName, exclusive) != null) return false
+  return !isValidRatio(ratio)
+}
+function toSupply(exclusive: number, ratio?: number, key?: AptKey): number {
+  if (key) {
+    const measured = lookupSupply(key.dongCode, key.aptName, exclusive)
+    if (measured != null) return Math.round(measured)
+  }
   return Math.round(exclusive / (isValidRatio(ratio) ? ratio : DEFAULT_EXCLUSIVE_RATIO))
 }
 
@@ -92,6 +104,7 @@ function AreaChipsRow({
   rowNum,
   units,
   exclusiveRatio,
+  aptKey,
   visible,
   onToggleArea,
   onShowAll,
@@ -99,6 +112,7 @@ function AreaChipsRow({
   rowNum: number
   units: AptUnit[]
   exclusiveRatio?: number
+  aptKey: AptKey
   visible: Set<number>
   onToggleArea: (area: number) => void
   onShowAll: () => void
@@ -107,7 +121,7 @@ function AreaChipsRow({
   // 같은 평수가 여러 타입이면 전용면적으로 구분
   const pyeongCount = new Map<number, number>()
   for (const u of units) {
-    const p = toPyeong(toSupply(u.area, exclusiveRatio))
+    const p = toPyeong(toSupply(u.area, exclusiveRatio, aptKey))
     pyeongCount.set(p, (pyeongCount.get(p) ?? 0) + 1)
   }
   const chipStyle = (on: boolean): React.CSSProperties => ({
@@ -125,7 +139,7 @@ function AreaChipsRow({
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', padding: '2px 0' }}>
           <span style={{ fontSize: 10, color: '#888', marginRight: 2 }}>평형 선택:</span>
           {units.map(u => {
-            const p = toPyeong(toSupply(u.area, exclusiveRatio))
+            const p = toPyeong(toSupply(u.area, exclusiveRatio, aptKey))
             const label = (pyeongCount.get(p) ?? 0) > 1 ? `${p}평(${u.area})` : `${p}평`
             return (
               <button key={u.area} style={chipStyle(visible.has(u.area))}
@@ -157,9 +171,9 @@ function JeonseCell({ unit }: { unit?: AptUnit }) {
   )
 }
 
-function UnitRow({ unit, rowNum, exclusiveRatio }: { unit: AptUnit; rowNum: number; exclusiveRatio?: number }) {
-  const estimated = !isValidRatio(exclusiveRatio)
-  const supply = toSupply(unit.area, exclusiveRatio)
+function UnitRow({ unit, rowNum, exclusiveRatio, aptKey }: { unit: AptUnit; rowNum: number; exclusiveRatio?: number; aptKey: AptKey }) {
+  const estimated = supplyIsEstimated(unit.area, exclusiveRatio, aptKey)
+  const supply = toSupply(unit.area, exclusiveRatio, aptKey)
   const supplyPyeong = toPyeong(supply)
   const perPyeong = supplyPyeong > 0 ? Math.round(unit.lastDeal.price / supplyPyeong) : 0
   return (
@@ -203,7 +217,7 @@ function AptRow({
   topLevel?: boolean
 }) {
   const summary = pickRepresentative(result.units)
-  const repPyeong = summary ? toPyeong(toSupply(summary.area, result.exclusiveRatio)) : 0
+  const repPyeong = summary ? toPyeong(toSupply(summary.area, result.exclusiveRatio, result)) : 0
   return (
     <tr className="srow" style={{ cursor: 'pointer', ...(topLevel ? { fontWeight: 600 } : {}) }} onClick={onToggle}>
       <td className="rnum">{rowNum}</td>
@@ -293,6 +307,9 @@ function GroupRow({
 export function AptTable({ results, onRemove, onRemoveGroup }: Props) {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [expandedApts, setExpandedApts] = useState<Set<string>>(new Set())
+  // 정적 공급면적 DB 로드 완료 시 리렌더(면적 표기를 실측값으로 갱신)
+  const [, setAreaLoaded] = useState(false)
+  useEffect(() => { loadAreaDb().then(() => setAreaLoaded(true)) }, [])
   // 단지별 표시 평형 선택 (없으면 거래 활발한 상위 4개 기본값)
   const [visibleAreas, setVisibleAreas] = useState<Map<string, Set<number>>>(new Map())
 
@@ -384,6 +401,7 @@ export function AptTable({ results, onRemove, onRemoveGroup }: Props) {
             rowNum={++rowCursor}
             units={result.units}
             exclusiveRatio={result.exclusiveRatio}
+            aptKey={result}
             visible={visible}
             onToggleArea={area => toggleArea(aptKey, area, result.units)}
             onShowAll={() => showAllAreas(aptKey, result.units)}
@@ -395,6 +413,7 @@ export function AptTable({ results, onRemove, onRemoveGroup }: Props) {
             unit={unit}
             rowNum={++rowCursor}
             exclusiveRatio={result.exclusiveRatio}
+            aptKey={result}
           />
         ))}
       </React.Fragment>
