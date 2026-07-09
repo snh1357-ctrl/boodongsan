@@ -10,12 +10,13 @@ for (const b of bjdongData as { code: string; sidoNm: string; sigunguNm: string 
   if (!regionByCode.has(b.code)) regionByCode.set(b.code, `${b.sidoNm} ${b.sigunguNm}`)
 }
 
-// 아파트명 클릭 시 네이버페이 부동산 지도를 새 탭으로 연다.
-// (API 키·좌표 불필요. m.land 검색 URL은 비공식이라 데스크톱/모바일 모두 동작 확인됨)
+// 아파트명 클릭 시 네이버 지도에서 "지역 + 단지명"으로 검색한 결과를 새 탭으로 연다.
+// (API 키·좌표 불필요. 부동산 매물 딥링크는 안정적인 공개 URL이 없어 404가 나므로,
+//  공개·안정적인 네이버 지도 텍스트 검색(map.naver.com/p/search)을 사용)
 function openMap(aptName: string, dongCode: string) {
   const region = regionByCode.get(dongCode) ?? ''
   const q = `${region} ${aptName}`.trim()
-  window.open(`https://m.land.naver.com/search/result/${encodeURIComponent(q)}`, '_blank', 'noopener')
+  window.open(`https://map.naver.com/p/search/${encodeURIComponent(q)}`, '_blank', 'noopener')
 }
 
 interface Props {
@@ -226,7 +227,7 @@ function AptRow({
         {/* 아파트명 클릭 → 네이버 부동산 지도 (행 펼침과 겹치지 않게 stopPropagation) */}
         <span
           onClick={e => { e.stopPropagation(); openMap(result.aptName, result.dongCode) }}
-          title="네이버 부동산 지도에서 위치 보기"
+          title="네이버 지도에서 위치 보기"
           style={{ cursor: 'pointer', textDecoration: 'underline', textDecorationColor: '#c7c7c7', textUnderlineOffset: 2 }}
         >
           {result.aptName}
