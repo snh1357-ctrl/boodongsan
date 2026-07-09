@@ -20,8 +20,24 @@ interface RawRent {
   dealDay: string
 }
 
+type JeonsePoint = { price: number; date: string }
+
+// 매매 데이터의 전용면적과 전월세 데이터의 전용면적은 같은 타입이라도
+// 표기가 미세하게 다를 수 있어(예: 84.99㎡ vs 84.97㎡) 정확 일치로는 매칭이 자주 실패한다.
+// 허용 오차(㎡) 내에서 가장 가까운 면적의 전세 보증금을 찾는다.
+const JEONSE_AREA_TOL = 1.0
+function nearestJeonse(map: Map<number, JeonsePoint>, area: number): JeonsePoint | undefined {
+  let best: JeonsePoint | undefined
+  let bestDiff = Infinity
+  for (const [a, v] of map) {
+    const diff = Math.abs(a - area)
+    if (diff <= JEONSE_AREA_TOL && diff < bestDiff) { bestDiff = diff; best = v }
+  }
+  return best
+}
+
 // 최근 12개월 전월세에서 면적별 최신 순수 전세(월세 0) 보증금 추출
-async function fetchJeonseByArea(aptName: string, dongCode: string): Promise<Map<number, { price: number; date: string }>> {
+async function fetchJeonseByArea(aptName: string, dongCode: string): Promise<Map<number, JeonsePoint>> {
   const map = new Map<number, { price: number; date: string }>()
   try {
     const url = `/api/rent?dongCode=${encodeURIComponent(dongCode)}&aptName=${encodeURIComponent(aptName)}&months=12`
@@ -181,7 +197,7 @@ export function useAptSearch() {
             ? {
                 ...r,
                 units: r.units.map(u => {
-                  const j = jeonseMap.get(u.area)
+                  const j = nearestJeonse(jeonseMap, u.area)
                   if (!j) return u
                   return {
                     ...u,
@@ -258,7 +274,7 @@ export function useAptSearch() {
             error: null,
             results: exists
               ? prev.results.map(r => r.aptName === item.aptName && r.dongCode === item.dongCode ? item : r)
-              : [...prev.results, item],
+              : [item, ...prev.results],  // 새로 추가한 단지는 맨 위로
           }
         })
         loadAptInfo(item.aptName, item.dongCode)
@@ -346,7 +362,7 @@ export function useAptSearch() {
         pending: prev.pending.filter(r => !(r.aptName === aptName && r.dongCode === dongCode)),
         results: prev.results.some(r => r.aptName === aptName && r.dongCode === dongCode)
           ? prev.results.map(r => r.aptName === aptName && r.dongCode === dongCode ? item : r)
-          : [...prev.results, item],
+          : [item, ...prev.results],  // 새로 추가한 단지는 맨 위로
       }
     })
     loadAptInfo(aptName, dongCode)
@@ -365,8 +381,8 @@ export function useAptSearch() {
         ...prev,
         pending: [],
         results: [
+          ...toAdd,  // 새로 추가한 단지들을 맨 위로
           ...prev.results.map(r => toUpdate.find(u => u.aptName === r.aptName && u.dongCode === r.dongCode) ?? r),
-          ...toAdd,
         ],
       }
     })

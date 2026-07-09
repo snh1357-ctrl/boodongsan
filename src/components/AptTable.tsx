@@ -50,12 +50,14 @@ function NewHighBadge() {
   return <span className="nh-badge">신고가</span>
 }
 
-// 대표 평형: 최근 3개월 거래가 가장 많은 평형, 동률이면 국민평형(전용 84㎡)에 가까운 것
+// 대표 평형: 국민평형(전용 84㎡ ≈ 공급 34평)에 가장 가까운 평형.
+// 34평이 없으면 가장 가까운 면적, 동률이면 최근 3개월 거래가 많은 쪽.
+const NATIONAL_AREA = 84  // 전용 84㎡ = 흔히 말하는 '국평'(공급 34평)
 function pickRepresentative(units: AptUnit[]): AptUnit | undefined {
   if (units.length === 0) return undefined
   return [...units].sort((a, b) =>
-    b.dealCount3m - a.dealCount3m ||
-    Math.abs(a.area - 84) - Math.abs(b.area - 84)
+    Math.abs(a.area - NATIONAL_AREA) - Math.abs(b.area - NATIONAL_AREA) ||
+    b.dealCount3m - a.dealCount3m
   )[0]
 }
 
@@ -193,6 +195,16 @@ function AptRow({
       <td className="cell tick co-cell" style={{ paddingLeft: topLevel ? undefined : 24 }}>
         <span style={{ marginRight: 4 }}>{expanded ? '▾' : '▸'}</span>
         {result.aptName}
+        {/* 접힘 상태에서 대표 행이 몇 평 기준인지 이름 옆에 표기 */}
+        {summary && repPyeong > 0 && (
+          <span style={{
+            marginLeft: 6, fontSize: 10, fontWeight: 600, color: '#217346',
+            background: '#e8f5e9', border: '1px solid #b5dcc0', borderRadius: 8,
+            padding: '0 6px', lineHeight: '15px', display: 'inline-block', verticalAlign: 'middle',
+          }}>
+            {repPyeong}평
+          </span>
+        )}
         <div className="ext-row">
           {[
             result.buildYear ? `${result.buildYear}년 준공 (${Math.max(0, new Date().getFullYear() - parseInt(result.buildYear))}년차)` : '',
@@ -203,7 +215,7 @@ function AptRow({
       </td>
       {summary ? (
         <>
-          <td className="cell r">{summary.isNewHigh && <NewHighBadge />}{formatPrice(summary.lastDeal.price)}<div className="ext-row">{summary.lastDeal.date} · {repPyeong}평 기준</div></td>
+          <td className="cell r">{summary.isNewHigh && <NewHighBadge />}{formatPrice(summary.lastDeal.price)}<div className="ext-row">{summary.lastDeal.date}</div></td>
           <td className="cell r">{formatPrice(summary.avg3m)}</td>
           <td className="cell r">{formatPrice(summary.allTimeHigh.price)}<div className="ext-row">{summary.allTimeHigh.date}{summary.isNewHigh ? ' 갱신' : ''}</div></td>
           <ChangeCell rate={summary.changeRate} />
@@ -308,17 +320,18 @@ export function AptTable({ results, onRemove, onRemoveGroup }: Props) {
     setExpandedGroups(prev => new Set([...prev, ...newKeys]))
   }, [results]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 단지가 1개인 그룹: 차수 행 자동 펼침
+  // 단지가 1개인 그룹: 차수 행 최초 등장 시 1회만 자동 펼침.
+  // (results가 ATH·전세·단지정보 로딩으로 자주 갱신되는데, 매번 펼치면
+  //  사용자가 접어도 다시 펴져버리므로 seenAptsRef로 최초 1회만 처리)
+  const seenAptsRef = useRef<Set<string>>(new Set())
   useEffect(() => {
-    setExpandedApts(prev => {
-      const next = new Set(prev)
-      for (const g of groups) {
-        if (g.items.length === 1) {
-          next.add(`${g.items[0].dongCode}-${g.items[0].aptName}`)
-        }
-      }
-      return next
-    })
+    const newKeys = groups
+      .filter(g => g.items.length === 1)
+      .map(g => `${g.items[0].dongCode}-${g.items[0].aptName}`)
+      .filter(k => !seenAptsRef.current.has(k))
+    if (newKeys.length === 0) return
+    newKeys.forEach(k => seenAptsRef.current.add(k))
+    setExpandedApts(prev => new Set([...prev, ...newKeys]))
   }, [results]) // eslint-disable-line react-hooks/exhaustive-deps
 
   let globalRow = 1
