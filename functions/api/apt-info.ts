@@ -1,6 +1,8 @@
 // functions/api/apt-info.ts
 import { matchDeals } from './_match'
+import { edgeCache, cacheGet, cachePut } from './_cache'
 // 국토교통부 공동주택단지목록정보 API로 세대수·건축년도 조회
+// 캐시: Cache API(무제한) → KV 2단
 // 캐시 키: `aptlist:{sigunguCd}` → 시군구 전체 단지 목록, 24시간 TTL
 
 interface Env {
@@ -136,17 +138,17 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   }
 
   const kv = context.env.APT_CACHE
+  const cache = edgeCache()
+  const waitUntil = (p: Promise<unknown>) => context.waitUntil(p)
   const cacheKey = `aptlist3:${dongCode}`  // v3: API 오류 캐시 오염 수정하며 무효화
 
-  // KV 캐시 조회 (24시간 TTL)
-  let list: KaptItem[] | null = null
-  if (kv) list = await kv.get<KaptItem[]>(cacheKey, 'json')
+  // Cache API → KV 순 조회 (24시간 TTL)
+  let list = await cacheGet<KaptItem[]>(cache, kv, cacheKey, 86400, waitUntil)
 
   if (!list) {
     list = await fetchAptList(context.env.MOLIT_API_KEY, dongCode)
-    if (kv && list.length > 0) {
-      // waitUntil: 응답 후에도 KV 쓰기가 중단되지 않도록 보장
-      context.waitUntil(kv.put(cacheKey, JSON.stringify(list), { expirationTtl: 86400 }).catch(() => {}))
+    if (list.length > 0) {
+      cachePut(cache, kv, cacheKey, list, 86400, waitUntil)
     }
   }
 
@@ -160,13 +162,12 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   }
 
   // 기본정보(전용률·사용승인일) 조회 — kaptCode 단위로 30일 캐시
-  let basis: BasisInfo | null = null
   const basisCacheKey = `basis3:${match.kaptCode}`  // v3: API 오류 캐시 오염 수정하며 무효화
-  if (kv) basis = await kv.get<BasisInfo>(basisCacheKey, 'json')
+  let basis = await cacheGet<BasisInfo>(cache, kv, basisCacheKey, 86400 * 30, waitUntil)
   if (!basis) {
     basis = await fetchBasisInfo(context.env.MOLIT_API_KEY, match.kaptCode)
-    if (kv && basis) {
-      context.waitUntil(kv.put(basisCacheKey, JSON.stringify(basis), { expirationTtl: 86400 * 30 }).catch(() => {}))
+    if (basis) {
+      cachePut(cache, kv, basisCacheKey, basis, 86400 * 30, waitUntil)
     }
   }
 

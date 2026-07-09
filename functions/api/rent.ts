@@ -1,7 +1,8 @@
 // functions/api/rent.ts
 import { matchDeals } from './_match'
+import { edgeCache, cacheGet, cachePut } from './_cache'
 // 아파트 전월세 실거래 조회 (RTMSDataSvcAptRent)
-// KV 캐시: `r:{dongCode}:{ym}` — 과거 월 영구, 당월 1시간 TTL (search.ts와 동일 전략)
+// 캐시: `r:{dongCode}:{ym}` — Cache API(무제한) → KV 2단, 과거 영구·당월 1시간 TTL
 
 interface Env {
   MOLIT_API_KEY: string
@@ -90,6 +91,7 @@ async function fetchMonthFromMolit(apiKey: string, dongCode: string, ym: string)
 }
 
 async function getMonthData(
+  cache: Cache,
   kv: KVNamespace | undefined,
   apiKey: string,
   dongCode: string,
@@ -97,17 +99,13 @@ async function getMonthData(
   waitUntil: (p: Promise<unknown>) => void,
 ): Promise<RentItem[]> {
   const cacheKey = `r2:${dongCode}:${ym}`  // v2: API 오류 캐시 오염 수정하며 무효화
-  if (kv) {
-    const cached = await kv.get<RentItem[]>(cacheKey, 'json')
-    if (cached !== null) return cached
-  }
+  const ttl = ym >= currentYm() ? 3600 : undefined
+  const cached = await cacheGet<RentItem[]>(cache, kv, cacheKey, ttl, waitUntil)
+  if (cached !== null) return cached
   const data = await fetchMonthFromMolit(apiKey, dongCode, ym)
   // 성공한 응답만 캐시 (실패를 빈 값으로 캐시하면 오염됨)
   if (data === null) return []
-  if (kv) {
-    const opts = ym >= currentYm() ? { expirationTtl: 3600 } : undefined
-    waitUntil(kv.put(cacheKey, JSON.stringify(data), opts).catch(() => {}))
-  }
+  cachePut(cache, kv, cacheKey, data, ttl, waitUntil)
   return data
 }
 
@@ -123,9 +121,10 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   }
 
   const kv = context.env.APT_CACHE
+  const cache = edgeCache()
   const results = await Promise.all(
     recentMonths(months).map(ym =>
-      getMonthData(kv, context.env.MOLIT_API_KEY, dongCode, ym, p => context.waitUntil(p))
+      getMonthData(cache, kv, context.env.MOLIT_API_KEY, dongCode, ym, p => context.waitUntil(p))
     )
   )
   const allRents = results.flat()

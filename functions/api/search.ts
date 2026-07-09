@@ -1,6 +1,8 @@
 // functions/api/search.ts
 import { matchDeals } from './_match'
-// KV 캐시 전략:
+import { edgeCache, cacheGet, cachePut } from './_cache'
+// 캐시 전략 (2단: Cache API → KV):
+//   - Cache API(무제한)가 앞단, KV(전역·영구)가 뒷단 → 반복 조회는 KV 미접근
 //   - 과거 월 데이터: 영구 캐시 (MOLIT 확정 데이터는 변경 없음)
 //   - 당월 데이터: 1시간 TTL (신고 지연분 반영)
 //   - 캐시 키: `m:{dongCode}:{ym}` → 같은 동의 모든 아파트가 공유
@@ -111,6 +113,7 @@ async function fetchMonthFromMolit(apiKey: string, dongCode: string, ym: string)
 }
 
 async function getMonthData(
+  cache: Cache,
   kv: KVNamespace | undefined,
   apiKey: string,
   dongCode: string,
@@ -118,22 +121,19 @@ async function getMonthData(
   waitUntil: (p: Promise<unknown>) => void,
 ): Promise<MonthResult> {
   const cacheKey = `m3:${dongCode}:${ym}`  // v3: API 오류가 빈 값으로 캐시되던 문제 수정하며 무효화
+  // 당월: 1시간 TTL, 과거: 영구 (변경 없는 확정 데이터)
+  const ttl = ym >= currentYm() ? 3600 : undefined
 
-  // KV 캐시 조회
-  if (kv) {
-    const cached = await kv.get<MolitItem[]>(cacheKey, 'json')
-    if (cached !== null) return { items: cached }
-  }
+  // Cache API → KV 순 조회 (히트 시 MOLIT 호출·KV 쓰기 없음)
+  const cached = await cacheGet<MolitItem[]>(cache, kv, cacheKey, ttl, waitUntil)
+  if (cached !== null) return { items: cached }
 
   // MOLIT API 호출
   const result = await fetchMonthFromMolit(apiKey, dongCode, ym)
 
-  // 성공한 응답만 KV에 저장 (실패를 빈 값으로 캐시하면 이후 조회가 전부 오염됨)
-  if (kv && result.items !== null) {
-    const isCurrent = ym >= currentYm()
-    // 당월: 1시간 TTL, 과거: 영구 저장 (변경 없는 확정 데이터)
-    const opts = isCurrent ? { expirationTtl: 3600 } : undefined
-    waitUntil(kv.put(cacheKey, JSON.stringify(result.items), opts).catch(() => {}))
+  // 성공한 응답만 저장 (실패를 빈 값으로 캐시하면 이후 조회가 전부 오염됨)
+  if (result.items !== null) {
+    cachePut(cache, kv, cacheKey, result.items, ttl, waitUntil)
   }
 
   return result
@@ -151,13 +151,14 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   }
 
   const kv = context.env.APT_CACHE  // 바인딩 없으면 undefined
+  const cache = edgeCache()
   // Cloudflare 무료 플랜 서브요청 50개/요청 한도:
   // 콜드 캐시 시 월당 최대 3 서브요청(KV get + fetch + KV put)이므로 12개월로 제한
   const months = generateMonths(fromYear, toYear).slice(-12)
 
   // 모든 월을 병렬로 조회 (캐시 히트 시 MOLIT API 호출 없음 → 즉시 응답)
   const results = await Promise.all(
-    months.map(ym => getMonthData(kv, context.env.MOLIT_API_KEY, dongCode, ym, p => context.waitUntil(p)))
+    months.map(ym => getMonthData(cache, kv, context.env.MOLIT_API_KEY, dongCode, ym, p => context.waitUntil(p)))
   )
   const allDeals = results.flatMap(r => r.items ?? [])
   const apiError = results.find(r => r.error)?.error
