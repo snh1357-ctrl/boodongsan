@@ -1,6 +1,21 @@
 // src/components/AptTable.tsx
 import React, { useState, useEffect, useRef } from 'react'
 import type { AptResult, AptUnit } from '../types'
+import bjdongData from '../data/bjdong.json'
+
+// 시군구코드(5자리) → "시도 시군구" 지역명 (지도 검색어 구성용)
+const regionByCode = new Map<string, string>()
+for (const b of bjdongData as { code: string; sidoNm: string; sigunguNm: string }[]) {
+  if (!regionByCode.has(b.code)) regionByCode.set(b.code, `${b.sidoNm} ${b.sigunguNm}`)
+}
+
+// 아파트명 클릭 시 네이버페이 부동산 지도를 새 탭으로 연다.
+// (API 키·좌표 불필요. m.land 검색 URL은 비공식이라 데스크톱/모바일 모두 동작 확인됨)
+function openMap(aptName: string, dongCode: string) {
+  const region = regionByCode.get(dongCode) ?? ''
+  const q = `${region} ${aptName}`.trim()
+  window.open(`https://m.land.naver.com/search/result/${encodeURIComponent(q)}`, '_blank', 'noopener')
+}
 
 interface Props {
   results: AptResult[]
@@ -194,7 +209,15 @@ function AptRow({
       <td className="rnum">{rowNum}</td>
       <td className="cell tick co-cell" style={{ paddingLeft: topLevel ? undefined : 24 }}>
         <span style={{ marginRight: 4 }}>{expanded ? '▾' : '▸'}</span>
-        {result.aptName}
+        {/* 아파트명 클릭 → 네이버 부동산 지도 (행 펼침과 겹치지 않게 stopPropagation) */}
+        <span
+          onClick={e => { e.stopPropagation(); openMap(result.aptName, result.dongCode) }}
+          title="네이버 부동산 지도에서 위치 보기"
+          style={{ cursor: 'pointer', textDecoration: 'underline', textDecorationColor: '#c7c7c7', textUnderlineOffset: 2 }}
+        >
+          {result.aptName}
+          <span style={{ marginLeft: 3, fontSize: 11, opacity: 0.7 }}>🗺</span>
+        </span>
         {/* 접힘 상태에서 대표 행이 몇 평 기준인지 이름 옆에 표기 */}
         {summary && repPyeong > 0 && (
           <span style={{
